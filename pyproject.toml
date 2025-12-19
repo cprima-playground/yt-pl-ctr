@@ -1,0 +1,9 @@
+[project]
+name = "{{REPO_NAME}}"
+version = "0.1.0"
+description = "Authoring environment for {{REPO_NAME}}"
+requires-python = ">=3.11"
+
+dependencies = [
+    "edu-toolkit @ git+https://github.com/{{ORG}}/edu-library.git@main#subdirectory=packages/edu-toolkit"
+]
