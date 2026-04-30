@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from .config import load_config
-from .fetcher import fetch_channel_videos
+from .fetcher import VideoFetcherProtocol, YtDlpFetcher
 from .models import Config
 from .queue import VideoQueue
 
@@ -44,6 +44,7 @@ def set_channel_offset(state: dict, channel_url: str, offset: int) -> None:
 def fetch_to_queue(
     config: Config,
     queue: VideoQueue,
+    fetcher: VideoFetcherProtocol | None = None,
     limit: int | None = None,
     offset: int | None = None,
     delay: float = 1.0,
@@ -65,6 +66,8 @@ def fetch_to_queue(
     Returns:
         Number of videos queued
     """
+    if fetcher is None:
+        fetcher = YtDlpFetcher()
     total_queued = 0
     state = load_state(state_file) if resume else {"offsets": {}}
 
@@ -80,7 +83,7 @@ def fetch_to_queue(
         logger.info("Fetching from: %s (offset: %d)", channel.url, channel_offset)
 
         try:
-            videos = fetch_channel_videos(
+            videos = fetcher.fetch_channel_videos(
                 url=channel.url,
                 limit=limit or 50,
                 offset=channel_offset,

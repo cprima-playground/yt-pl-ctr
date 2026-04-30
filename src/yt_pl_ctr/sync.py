@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 
 from .classifier import ClassificationResult, VideoClassifier
-from .fetcher import fetch_channel_videos
+from .fetcher import VideoFetcherProtocol, YtDlpFetcher
 from .models import ChannelConfig, Config, VideoMetadata
 from .youtube import YouTubeClient
 
@@ -63,6 +63,7 @@ def classify_channel_videos(
     channel_config: ChannelConfig,
     limit: int = 30,
     use_wikipedia: bool | None = None,
+    fetcher: VideoFetcherProtocol | None = None,
 ) -> list[ClassifiedVideo]:
     """
     Fetch and classify videos from a channel.
@@ -71,15 +72,18 @@ def classify_channel_videos(
         channel_config: Channel configuration
         limit: Max videos to fetch
         use_wikipedia: Override channel's use_wikipedia setting
+        fetcher: VideoFetcherProtocol implementation (defaults to YtDlpFetcher)
 
     Returns:
         List of classified videos
     """
+    if fetcher is None:
+        fetcher = YtDlpFetcher()
     wiki_enabled = use_wikipedia if use_wikipedia is not None else channel_config.use_wikipedia
     classifier = VideoClassifier(channel_config, use_wikipedia=wiki_enabled)
     results = []
 
-    for video in fetch_channel_videos(channel_config.url, limit):
+    for video in fetcher.fetch_channel_videos(channel_config.url, limit):
         classification = classifier.classify(video)
         playlist_name = classifier.get_playlist_name(classification.category_key)
         results.append(
@@ -97,6 +101,7 @@ def sync_channel(
     channel_config: ChannelConfig,
     youtube: YouTubeClient,
     playlist_settings: "PlaylistSettings",
+    fetcher: VideoFetcherProtocol,
     limit: int = 30,
     dry_run: bool = False,
     use_wikipedia: bool | None = None,
@@ -124,7 +129,7 @@ def sync_channel(
 
     logger.info("Processing channel: %s", channel_config.url)
 
-    for video in fetch_channel_videos(channel_config.url, limit):
+    for video in fetcher.fetch_channel_videos(channel_config.url, limit):
         stats.videos_processed += 1
 
         try:
@@ -185,6 +190,7 @@ def sync_channel(
 def sync_all_channels(
     config: Config,
     youtube: YouTubeClient,
+    fetcher: VideoFetcherProtocol,
     limit: int | None = None,
     dry_run: bool = False,
     channels: list[str] | None = None,
@@ -214,6 +220,7 @@ def sync_all_channels(
             channel_config=channel_config,
             youtube=youtube,
             playlist_settings=config.playlist_settings,
+            fetcher=fetcher,
             limit=effective_limit,
             dry_run=dry_run,
         )

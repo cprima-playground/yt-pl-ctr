@@ -15,6 +15,7 @@ from rich.table import Table
 
 from . import __version__
 from .config import load_config
+from .fetcher import VideoFetcherProtocol, YtDlpFetcher, YouTubeAPIFetcher
 from .queue import VideoQueue
 from .fetcher_queue import fetch_to_queue
 from .processor import process_pending, watch_and_process
@@ -44,6 +45,13 @@ def version_callback(value: bool) -> None:
     if value:
         console.print(f"yt-pl-ctr {__version__}")
         raise typer.Exit()
+
+
+def _build_fetcher(youtube: YouTubeClient | None) -> VideoFetcherProtocol:
+    """Select fetcher implementation: API if creds available, yt-dlp otherwise."""
+    if youtube is not None:
+        return YouTubeAPIFetcher(youtube)
+    return YtDlpFetcher()
 
 
 @app.callback()
@@ -106,6 +114,7 @@ def sync(
     stats = sync_all_channels(
         config=config,
         youtube=youtube,
+        fetcher=_build_fetcher(youtube),
         limit=limit,
         dry_run=dry_run,
         channels=channel,
@@ -179,7 +188,7 @@ def classify(
         table.add_column("Category", style="cyan")
         table.add_column("Match", style="dim")
 
-        results = classify_channel_videos(channel_config, limit=limit)
+        results = classify_channel_videos(channel_config, limit=limit, fetcher=_build_fetcher(None))
 
         for r in results:
             guest = r.video.title.split(" - ")[-1][:20] if " - " in r.video.title else "-"
@@ -312,7 +321,16 @@ def fetch(
             console.print(f"[dim]  {ch.playlist_prefix}: offset=0[/dim]")
     console.print(f"[dim]Limit: {limit}, Queue: {queue_dir}[/dim]")
 
-    count = fetch_to_queue(config, queue, limit=limit, offset=offset, delay=delay, resume=resume)
+    try:
+        youtube = YouTubeClient.from_env()
+    except YouTubeAPIError:
+        youtube = None
+
+    count = fetch_to_queue(
+        config, queue,
+        fetcher=_build_fetcher(youtube),
+        limit=limit, offset=offset, delay=delay, resume=resume,
+    )
 
     console.print(f"\n[green]Fetched {count} videos[/green]")
     console.print(f"[dim]Pending: {queue.pending_count()}[/dim]")

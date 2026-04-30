@@ -41,7 +41,11 @@ class Category(BaseModel):
 class ChannelConfig(BaseModel):
     """Configuration for a single YouTube channel."""
 
-    url: str = Field(..., description="yt-dlp compatible URL")
+    url: str = Field(..., description="Channel URL (e.g. https://www.youtube.com/@handle/videos)")
+    channel_id: str | None = Field(
+        default=None,
+        description="YouTube channel ID (UCxxx). If None, resolved from url at runtime.",
+    )
     playlist_prefix: str = Field(..., description="Prefix for playlist names")
     categories: dict[str, Category] = Field(default_factory=dict)
     default_category: str = Field(default="other", description="Fallback category")

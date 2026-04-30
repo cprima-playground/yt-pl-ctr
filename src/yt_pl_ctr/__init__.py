@@ -5,7 +5,7 @@ __version__ = "0.1.0"
 from .config import load_config
 from .models import Category, ChannelConfig, Config, PlaylistSettings, VideoMetadata
 from .classifier import ClassificationResult, VideoClassifier
-from .fetcher import fetch_channel_videos, fetch_video_metadata
+from .fetcher import fetch_channel_videos, fetch_video_metadata, VideoFetcherProtocol, YtDlpFetcher, YouTubeAPIFetcher
 from .youtube import YouTubeClient, YouTubeAPIError
 from .sync import classify_channel_videos, sync_all_channels, sync_channel
 from .wikipedia import WikipediaInfo, lookup_person, get_primary_topic
@@ -27,6 +27,9 @@ __all__ = [
     # Fetching
     "fetch_channel_videos",
     "fetch_video_metadata",
+    "VideoFetcherProtocol",
+    "YtDlpFetcher",
+    "YouTubeAPIFetcher",
     # YouTube API
     "YouTubeClient",
     "YouTubeAPIError",

@@ -1,7 +1,8 @@
-"""YouTube Data API client for playlist management."""
+"""YouTube Data API client for playlist management and video fetching."""
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from functools import wraps
@@ -22,6 +23,21 @@ MAX_DELAY = 900.0  # 15 minutes max
 # Minimum delay between API calls (seconds)
 API_CALL_DELAY = 5.0
 _last_api_call = 0.0
+
+
+def _parse_iso8601_duration(duration: str) -> int:
+    """Convert ISO 8601 duration to seconds. e.g. PT2H30M15S → 9015."""
+    pattern = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+    m = pattern.match(duration or "")
+    if not m:
+        return 0
+    hours, minutes, seconds = (int(x or 0) for x in m.groups())
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _parse_upload_date(published_at: str) -> str:
+    """Convert ISO 8601 timestamp to YYYYMMDD. e.g. 2024-01-15T10:30:00Z → 20240115."""
+    return published_at[:10].replace("-", "") if published_at else ""
 
 
 def _rate_limit_delay():
@@ -89,6 +105,8 @@ class YouTubeClient:
     _service: object = field(repr=False)
     _playlist_cache: dict[str, str] = field(default_factory=dict, repr=False)
     _added_videos: set[tuple[str, str]] = field(default_factory=set, repr=False)  # (playlist_id, video_id)
+    _channel_id_cache: dict[str, str] = field(default_factory=dict, repr=False)
+    _uploads_playlist_cache: dict[str, str] = field(default_factory=dict, repr=False)
 
     @classmethod
     def from_env(cls) -> "YouTubeClient":
@@ -310,4 +328,134 @@ class YouTubeClient:
             return False
 
         return self.add_video_to_playlist(playlist_id, video_id)
+
+    # ── Video fetching ────────────────────────────────────────────────────────
+
+    @retry_on_rate_limit
+    def resolve_channel_id(self, url: str) -> str:
+        """
+        Resolve a channel URL or @handle to a channel ID (UCxxx).
+
+        Costs 1 quota unit for handle lookups; UCxxx IDs are returned as-is.
+        Results are cached in-session.
+        """
+        if url in self._channel_id_cache:
+            return self._channel_id_cache[url]
+
+        # Already a channel ID
+        if re.match(r"^UC[\w-]{22}$", url):
+            self._channel_id_cache[url] = url
+            return url
+
+        # Extract handle: @joerogan or https://www.youtube.com/@joerogan/videos
+        handle_match = re.search(r"@([\w.-]+)", url)
+        if handle_match:
+            handle = handle_match.group(1)
+            _rate_limit_delay()
+            logger.debug("API CALL: channels.list(forHandle=%s)", handle)
+            response = (
+                self._service.channels()
+                .list(part="id", forHandle=handle)
+                .execute()
+            )
+            items = response.get("items", [])
+            if not items:
+                raise YouTubeAPIError(f"Channel not found for handle: @{handle}")
+            channel_id = items[0]["id"]
+            self._channel_id_cache[url] = channel_id
+            logger.debug("Resolved @%s → %s", handle, channel_id)
+            return channel_id
+
+        raise YouTubeAPIError(f"Cannot resolve channel ID from URL: {url}")
+
+    @retry_on_rate_limit
+    def get_uploads_playlist_id(self, channel_id: str) -> str:
+        """
+        Get the uploads playlist ID for a channel. Costs 1 quota unit.
+        Results are cached in-session.
+        """
+        if channel_id in self._uploads_playlist_cache:
+            return self._uploads_playlist_cache[channel_id]
+
+        _rate_limit_delay()
+        logger.debug("API CALL: channels.list(contentDetails, id=%s)", channel_id)
+        response = (
+            self._service.channels()
+            .list(part="contentDetails", id=channel_id)
+            .execute()
+        )
+        items = response.get("items", [])
+        if not items:
+            raise YouTubeAPIError(f"Channel not found: {channel_id}")
+        uploads_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        self._uploads_playlist_cache[channel_id] = uploads_id
+        return uploads_id
+
+    @retry_on_rate_limit
+    def list_playlist_videos(
+        self, playlist_id: str, max_results: int = 50, page_token: str | None = None
+    ) -> tuple[list[str], str | None]:
+        """
+        List video IDs from a playlist page. Costs 1 quota unit per call.
+
+        Returns:
+            (video_ids, next_page_token)
+        """
+        _rate_limit_delay()
+        logger.debug("API CALL: playlistItems.list(%s)", playlist_id)
+        kwargs: dict = dict(
+            part="contentDetails",
+            playlistId=playlist_id,
+            maxResults=min(max_results, 50),
+        )
+        if page_token:
+            kwargs["pageToken"] = page_token
+        response = self._service.playlistItems().list(**kwargs).execute()
+        video_ids = [
+            item["contentDetails"]["videoId"]
+            for item in response.get("items", [])
+            if item.get("contentDetails", {}).get("videoId")
+        ]
+        next_token = response.get("nextPageToken")
+        return video_ids, next_token
+
+    @retry_on_rate_limit
+    def get_videos_metadata(self, video_ids: list[str]) -> "list[VideoMetadata]":
+        """
+        Fetch full metadata for up to 50 videos in one API call. Costs 1 quota unit.
+        """
+        from .models import VideoMetadata
+
+        if not video_ids:
+            return []
+
+        _rate_limit_delay()
+        logger.debug("API CALL: videos.list(%d ids)", len(video_ids))
+        response = (
+            self._service.videos()
+            .list(
+                part="snippet,contentDetails,statistics",
+                id=",".join(video_ids[:50]),
+            )
+            .execute()
+        )
+
+        results = []
+        for item in response.get("items", []):
+            snippet = item.get("snippet", {})
+            content = item.get("contentDetails", {})
+            stats = item.get("statistics", {})
+            results.append(
+                VideoMetadata(
+                    video_id=item["id"],
+                    title=snippet.get("title", ""),
+                    description=snippet.get("description", ""),
+                    channel_name=snippet.get("channelTitle", ""),
+                    channel_id=snippet.get("channelId", ""),
+                    upload_date=_parse_upload_date(snippet.get("publishedAt", "")),
+                    duration=_parse_iso8601_duration(content.get("duration", "")),
+                    view_count=int(stats["viewCount"]) if stats.get("viewCount") else None,
+                )
+            )
+        return results
 
