@@ -44,3 +44,15 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Google OAuth credentials
+client_secret*.json
+
+# Test fixtures (downloaded video metadata)
+tests/fixtures/*.json
+
+# Queue directory (local backfill)
+queue/
+
+# State file (backfill progress)
+.yt-pl-ctr-state.json

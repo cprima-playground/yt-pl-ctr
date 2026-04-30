@@ -1,9 +1,65 @@
 [project]
-name = "{{REPO_NAME}}"
+name = "yt-pl-ctr"
 version = "0.1.0"
-description = "Authoring environment for {{REPO_NAME}}"
+description = "YouTube playlist controller - classify videos and manage playlists automatically"
 requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "CC BY 4.0"}
+authors = [
+    {name = "cprima", email = "cprior@gmail.com"},
+]
+keywords = ["youtube", "playlist", "automation", "classification", "yt-dlp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Utilities",
+]
 
 dependencies = [
-    "edu-toolkit @ git+https://github.com/{{ORG}}/edu-library.git@main#subdirectory=packages/edu-toolkit"
+    "yt-dlp>=2025.12.8",
+    "google-api-python-client>=2.0.0",
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "wikipedia-api>=0.8.1",
+    "python-dotenv>=1.0.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "pytest>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/cprima-playground/yt-pl-ctr"
+Repository = "https://github.com/cprima-playground/yt-pl-ctr"
+Issues = "https://github.com/cprima-playground/yt-pl-ctr/issues"
+
+[project.scripts]
+yt-pl-ctr = "yt_pl_ctr.cli:main_cli"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yt_pl_ctr"]

@@ -1,0 +1,193 @@
+# Multi-channel playlist configuration
+playlist_settings:
+  privacy: unlisted
+  description_template: "Auto-curated by yt-pl-ctr"
+
+limit: 30
+
+channels:
+  # Joe Rogan Experience
+  - url: "https://www.youtube.com/@joerogan/videos"
+    playlist_prefix: "JRE"
+    default_category: "other"
+    skip_default: true  # Only add videos that match a category
+    use_wikipedia: true  # Use Wikipedia to classify unknown guests
+    guest_pattern: "\\s-\\s(.+)$"
+    min_duration: 3600  # Skip videos shorter than 1 hour
+    categories:
+      science_tech:
+        name: "Science & Technology"
+        keywords:
+          - "artificial intelligence"
+          - "neuroscience"
+          - "biology"
+          - "physics"
+          - "space"
+          - "NASA"
+          - "SpaceX"
+          - "technology"
+          - "science"
+          - "research"
+          - "brain"
+          - "quantum"
+        guests:
+          - "Elon Musk"
+          - "Andrew Huberman"
+          - "Lex Fridman"
+          - "Neil deGrasse Tyson"
+          - "Brian Cox"
+          - "Rhonda Patrick"
+          - "Sam Harris"
+          - "Matthew Walker"
+          - "Paul Stamets"
+
+      ufo_aliens:
+        name: "UFOs & Extraterrestrial Life"
+        keywords:
+          - "UFO"
+          - "UAP"
+          - "alien"
+          - "extraterrestrial"
+          - "disclosure"
+          - "Pentagon"
+          - "abduction"
+          - "Roswell"
+          - "Area 51"
+        guests:
+          - "Bob Lazar"
+          - "Jeremy Corbell"
+          - "David Fravor"
+          - "Luis Elizondo"
+          - "George Knapp"
+          - "Jacques Vallee"
+
+      politics:
+        name: "Politics & Current Events"
+        keywords:
+          - "election"
+          - "president"
+          - "congress"
+          - "senator"
+          - "policy"
+          - "government"
+          - "immigration"
+          - "border"
+          - "democracy"
+          - "republican"
+          - "democrat"
+          - "political"
+        guests:
+          - "Bernie Sanders"
+          - "Tulsi Gabbard"
+          - "Dan Crenshaw"
+          - "Ben Shapiro"
+          - "Jordan Peterson"
+          - "Candace Owens"
+          - "Tim Pool"
+
+      comedy:
+        name: "Comedy & Entertainment"
+        keywords:
+          - "comedy"
+          - "stand-up"
+          - "standup"
+          - "comedian"
+          - "funny"
+          - "Netflix special"
+          - "movie"
+          - "actor"
+          - "actress"
+        guests:
+          - "Dave Chappelle"
+          - "Joe List"
+          - "Mark Normand"
+          - "Shane Gillis"
+          - "Andrew Schulz"
+          - "Theo Von"
+          - "Tom Segura"
+          - "Bert Kreischer"
+          - "Bill Burr"
+          - "Tony Hinchcliffe"
+          - "Whitney Cummings"
+          - "Tim Dillon"
+          - "Bobby Lee"
+          - "Ari Shaffir"
+          - "Duncan Trussell"
+          - "Joey Diaz"
+          - "Brian Redban"
+          - "Donnell Rawlings"
+
+      mma_martial_arts:
+        name: "Martial Arts & MMA"
+        keywords:
+          - "UFC"
+          - "MMA"
+          - "fighter"
+          - "boxing"
+          - "wrestling"
+          - "champion"
+          - "jiu-jitsu"
+          - "BJJ"
+          - "kickboxing"
+          - "Bellator"
+          - "knockout"
+        guests:
+          - "Jocko Willink"
+          - "David Goggins"
+          - "Cameron Hanes"
+          - "Gordon Ryan"
+          - "Israel Adesanya"
+          - "Conor McGregor"
+          - "Georges St-Pierre"
+          - "GSP"
+          - "Khabib Nurmagomedov"
+          - "Jon Jones"
+          - "Francis Ngannou"
+          - "John Danaher"
+          - "Eddie Bravo"
+          - "Bas Rutten"
+
+      ancient_history:
+        name: "Ancient History & Alternative Theories"
+        priority: 1  # Check keywords before Wikipedia
+        keywords:
+          - "ancient"
+          - "ancient history"
+          - "ancient mysteries"
+          - "ancient engineering"
+          - "civilization"
+          - "archaeology"
+          - "archaeologist"
+          - "pyramids"
+          - "Egypt"
+          - "Egyptian"
+          - "Göbekli Tepe"
+          - "lost civilization"
+          - "prehistoric"
+          - "Sphinx"
+          - "Atlantis"
+          - "megalith"
+          - "megalithic"
+          - "Younger Dryas"
+          - "Ice Age"
+          - "Mesopotamia"
+          - "Sumerian"
+          - "Mayan"
+          - "Aztec"
+          - "Inca"
+          - "Stonehenge"
+          - "ancient temple"
+          - "ancient monument"
+        guests:
+          - "Graham Hancock"
+          - "Randall Carlson"
+          - "John Anthony West"
+          - "Robert Schoch"
+          - "Brien Foerster"
+          - "Ben van Kerkwyk"
+          - "Jimmy Corsetti"
+          - "UnchartedX"
+
+      other:
+        name: "Other"
+        keywords: []
