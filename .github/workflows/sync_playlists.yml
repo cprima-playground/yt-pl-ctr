@@ -1,0 +1,65 @@
+name: Sync YouTube Playlists
+
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: 'Config file to use'
+        required: false
+        default: 'configs/channels.yaml'
+      limit:
+        description: 'Number of recent videos to process per channel'
+        required: false
+        default: '30'
+      dry_run:
+        description: 'Dry run mode (no changes made)'
+        required: false
+        default: 'false'
+        type: boolean
+      channel:
+        description: 'Specific channel URL to sync (optional, syncs all if empty)'
+        required: false
+        default: ''
+  schedule:
+    # Run daily at 03:23 UTC
+    - cron: "23 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Sync playlists
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          ARGS="sync --config ${{ inputs.config || 'configs/channels.yaml' }}"
+          ARGS="$ARGS --limit ${{ inputs.limit || '30' }}"
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ -n "${{ inputs.channel }}" ]; then
+            ARGS="$ARGS --channel '${{ inputs.channel }}'"
+          fi
+
+          echo "Running: uv run yt-pl-ctr $ARGS"
+          uv run yt-pl-ctr $ARGS
