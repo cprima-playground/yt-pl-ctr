@@ -236,3 +236,15 @@ channels:
     # Workflow: fetch-metadata → ingest-channel → discover-topics → define taxonomy here
     taxonomy: []
     playlists: {}
+
+  - name: "The New Atlas"
+    url: "https://www.youtube.com/@TheNewAtlas/videos"
+    playlist_prefix: "TNA"
+    min_duration: 300              # 5 min — skip very short clips
+    ingest_limit: 5000             # fetch full back-catalogue
+    ml_confidence_threshold: 0.08
+
+    # Taxonomy and playlists to be defined after topic discovery.
+    # Workflow: fetch-metadata → ingest-channel → discover-topics → define taxonomy here
+    taxonomy: []
+    playlists: {}
