@@ -1,102 +1,107 @@
 # yt-pl-ctr
 
-YouTube Playlist Controller - Classify videos and automatically add them to categorized playlists.
+Automated YouTube playlist curator. Fetches recent videos from configured channels, classifies them, and adds them to curated playlists — on a schedule or on demand.
 
-## Features
+## How it works
 
-- **Automatic classification** of videos based on:
-  - Guest name matching (e.g., "Dave Chappelle" → comedian)
-  - Keyword matching in title and description
-  - Configurable categories with fallback to default
-- **YAML configuration** for easy customization of categories, keywords, and guest mappings
-- **Dry-run mode** to preview changes before applying
-- **GitHub Actions** integration for scheduled automation
-- **Idempotent operation** - safe to run multiple times
+Each channel in `configs/channels.yaml` defines a hierarchical topic taxonomy and a set of target playlists. Two classification strategies are supported and can be mixed per channel:
 
-## Installation
+**ML classification** — a TF-IDF + logistic regression model trained on LLM-labeled episodes. The trained model is committed to `models/<channel_slug>/` so CI can classify without retraining. A per-channel `ml_confidence_threshold` controls how certain the model must be before assigning a category.
+
+**Keyword mention matching** — scans title, description, and transcript for configurable entity names or phrases. A `min_mentions` threshold per playlist filters passing references from substantive coverage.
+
+## Automated sync
+
+A GitHub Actions workflow (`sync_playlists.yml`) runs on a daily schedule. It fetches recent videos via the YouTube Data API (OAuth2 with a long-lived refresh token), classifies them, and writes to playlists — no yt-dlp, no bot detection issues.
+
+Manual trigger available via `workflow_dispatch` with `limit` and `dry_run` inputs.
+
+## Local workflows
 
 ```bash
-# Using pip
-pip install .
+# Metadata + transcript ingest
+just fetch-metadata "Channel Name"
+just ingest-channel "Channel Name"
 
-# Or with uv
-uv sync
+# ML pipeline: label → train → backfill
+just retrain-channel "Channel Name"
+just backfill-plan                  # classify cache, save plan
+just backfill-execute-plan          # write plan to YouTube
+
+# Keyword mention search
+just mentions-plan "Channel Name"   # scan cache, save plan
+just mentions-execute-plan          # write plan to YouTube
+
+# Shortcuts
+just jre                            # trigger GH Actions workflow (dry-run)
+just jre false                      # trigger live run
+just candace                        # run keyword scan locally
 ```
 
 ## Configuration
 
-Create a YAML config file (see `configs/jre.yaml` for example):
+`configs/channels.yaml` — one file, all channels. Per-channel settings:
 
 ```yaml
-channel_url: "https://www.youtube.com/@yourchannel/videos"
-playlist_prefix: "MyChannel"
-playlist_privacy: "unlisted"
+channels:
+  - name: "My Channel"
+    url: "https://www.youtube.com/@handle/videos"
+    channel_id: "UCxxxxx"           # optional; resolved from handle if omitted
+    playlist_prefix: "MC"
+    min_duration: 600               # skip shorts (seconds)
+    max_age_days: 365               # ingest window
+    ingest_limit: 1500              # max videos to fetch per ingest run
+    ml_confidence_threshold: 0.08   # ML classifier cutoff
 
-categories:
-  category_name:
-    keywords:
-      - "keyword1"
-      - "keyword2"
-    guests:
-      - "Known Guest Name"
+    taxonomy:
+      - slug: parent_topic
+        label: "Parent Topic"
+        children:
+          - slug: leaf_topic
+            label: "leaf topic label"
 
-default_category: "other"
-guest_pattern: "\\s-\\s(.+)$"
+    # ML-classified playlists (require trained model)
+    playlists:
+      leaf_topic:
+        title: "MC – Parent – Leaf Topic"
+
+    # Keyword-matched playlists (no model required)
+    keyword_playlists:
+      named_entity:
+        title: "MC – Category – Named Entity"
+        min_mentions: 2
+        keywords:
+          - "Full Name"
+          - "Alternate Name"
 ```
 
-## Usage
-
-### Command Line
+## Environment variables
 
 ```bash
-# Sync playlists (dry run first!)
-yt-pl-ctr sync --config configs/jre.yaml --dry-run
-
-# Apply changes
-yt-pl-ctr sync --config configs/jre.yaml --limit 30
-
-# List categories from config
-yt-pl-ctr list --config configs/jre.yaml
+YT_CLIENT_ID=...
+YT_CLIENT_SECRET=...
+YT_REFRESH_TOKEN=...
+YT_CACHE_DIR=/path/to/cache      # default: ./cache
 ```
 
-### Environment Variables
+Copy `.env.example` to `.env` for local development.
 
-Required for YouTube API access:
+## Getting YouTube API credentials
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → create project → enable YouTube Data API v3
+2. Create OAuth 2.0 credentials (Desktop app type)
+3. Run `uv run python scripts/get_refresh_token.py` to obtain a refresh token
+
+Store `YT_CLIENT_ID`, `YT_CLIENT_SECRET`, and `YT_REFRESH_TOKEN` as repository secrets for GitHub Actions.
+
+## Installation
 
 ```bash
-export YT_CLIENT_ID="your-client-id"
-export YT_CLIENT_SECRET="your-client-secret"
-export YT_REFRESH_TOKEN="your-refresh-token"
+uv sync
+uv run yt-pl-ctr --help
 ```
 
-### GitHub Actions
-
-The included workflow (`.github/workflows/sync_playlists.yml`) runs daily at 03:23 UTC.
-
-Configure these secrets in your repository:
-- `YT_CLIENT_ID`
-- `YT_CLIENT_SECRET`
-- `YT_REFRESH_TOKEN`
-
-Manual trigger available via workflow_dispatch with options for config file, limit, and dry-run mode.
-
-## Getting YouTube API Credentials
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing
-3. Enable the YouTube Data API v3
-4. Create OAuth 2.0 credentials (Desktop app type)
-5. Download credentials and note the Client ID and Secret
-6. Use the OAuth flow to get a refresh token with `youtube` scope
-
-## Classification Logic
-
-Videos are classified in this order of priority:
-
-1. **Guest match**: If the extracted guest name matches a known guest in any category
-2. **Title keywords**: If any category keyword appears in the video title
-3. **Description keywords**: If any category keyword appears in the description
-4. **Default**: Falls back to configured `default_category`
+Requires Python 3.11+.
 
 ## License
 
