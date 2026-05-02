@@ -160,14 +160,20 @@ def _run_bertopic(
     embedding_model_name: str,
     dim_reduction: str,
 ) -> tuple[list[dict], list[int]]:
+    # Must be set before any numba-backed package is imported (umap-learn triggers numba
+    # at load time and SIGBUS on WSL2 without this).
+    import os
+    os.environ["NUMBA_DISABLE_JIT"] = "1"
+    os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_bertopic_cache")
+
     print("[1/5] Importing BERTopic stack ...", flush=True)
     try:
         import numpy as np
         print("  numpy ... ok", flush=True)
         from bertopic import BERTopic
         print("  bertopic ... ok", flush=True)
-        from hdbscan import HDBSCAN
-        print("  hdbscan ... ok", flush=True)
+        from fast_hdbscan import HDBSCAN
+        print("  fast_hdbscan ... ok", flush=True)
         from sentence_transformers import SentenceTransformer
         print("  sentence_transformers ... ok", flush=True)
         if dim_reduction == "umap":

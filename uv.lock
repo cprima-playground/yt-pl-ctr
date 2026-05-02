@@ -276,6 +276,20 @@ wheels = [
 ]
 
 [[package]]
+name = "fast-hdbscan"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numba" },
+    { name = "numpy" },
+    { name = "scikit-learn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/3b/235c47dd8282610522f9fa6869ad8b896c2d5927f82039f66d547229fc07/fast_hdbscan-0.3.2.tar.gz", hash = "sha256:248e09202eda04da4b84dd819de3cc714469912205bb447ad4c7136db580f205", size = 59800, upload-time = "2026-04-07T16:43:33.12Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/92/34dac2dff0877d637535bd8852bc68323f155799521c9ee94c27c548426f/fast_hdbscan-0.3.2-py3-none-any.whl", hash = "sha256:619b42963935e6c3ab1e51de7895dd35260f3ef9ebe4627ff4317073fe51a667", size = 62642, upload-time = "2026-04-07T16:43:31.918Z" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.29.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2092,7 +2106,7 @@ dev = [
 ]
 topic-discovery = [
     { name = "bertopic" },
-    { name = "hdbscan" },
+    { name = "fast-hdbscan" },
     { name = "numpy" },
     { name = "sentence-transformers" },
     { name = "umap-learn" },
@@ -2102,10 +2116,10 @@ topic-discovery = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.97.0" },
     { name = "bertopic", marker = "extra == 'topic-discovery'", specifier = ">=0.16.0" },
+    { name = "fast-hdbscan", marker = "extra == 'topic-discovery'", specifier = ">=0.2.0" },
     { name = "google-api-python-client", specifier = ">=2.0.0" },
     { name = "google-auth", specifier = ">=2.0.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.0.0" },
-    { name = "hdbscan", marker = "extra == 'topic-discovery'", specifier = ">=0.8.0" },
     { name = "nltk", specifier = ">=3.9.4" },
     { name = "numpy", marker = "extra == 'topic-discovery'", specifier = ">=1.24.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
