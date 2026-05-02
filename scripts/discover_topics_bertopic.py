@@ -232,8 +232,13 @@ def _run_bertopic(
         from sentence_transformers import SentenceTransformer
         print("  sentence_transformers ... ok", flush=True)
         if dim_reduction == "umap":
-            from umap import UMAP
-            print("  umap ... ok", flush=True)
+            try:
+                from umap import UMAP
+                print("  umap ... ok", flush=True)
+            except ImportError:
+                print("  umap not installed — umap-learn is excluded from deps on WSL2", file=sys.stderr)
+                print("  Use --dim-reduction pca (default) instead.", file=sys.stderr)
+                sys.exit(1)
         else:
             from sklearn.decomposition import PCA
             print("  sklearn PCA ... ok", flush=True)
@@ -276,9 +281,15 @@ def _run_bertopic(
     n_clusters = nr_topics if nr_topics else 20
     cluster_model = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
 
+    # Pass our stop-word list so BERTopic's c-TF-IDF doesn't surface "the", "uh", etc.
+    from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS
+    stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
+    vectorizer_model = CountVectorizer(stop_words=stop_words, ngram_range=(1, 2))
+
     print("[5/5] Fitting BERTopic ...", flush=True)
     topic_model = BERTopic(
         umap_model=dim_model, hdbscan_model=cluster_model,
+        vectorizer_model=vectorizer_model,
         nr_topics=nr_topics, calculate_probabilities=False, verbose=False,
     )
     raw_topics, _ = topic_model.fit_transform(documents, embeddings)
@@ -435,7 +446,7 @@ def main() -> int:
         "n_topics": len(topics),
         "n_unclustered": outliers,
         "topics": [{k: v for k, v in t.items() if k != "doc_indices"} for t in topics],
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nSaved: {out_path}")
     print("Next: review topics, define taxonomy in configs/channels.yaml, then: just llm-label-all")
     return 0
