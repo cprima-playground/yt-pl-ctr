@@ -118,17 +118,23 @@ def _make_lemma_tokenizer():
 
 # ── Engine: sklearn TF-IDF + NMF ──────────────────────────────────────────────
 
+def _build_stop_words(extra: frozenset = frozenset()) -> list[str]:
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    return list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS | extra)
+
+
 def _run_nmf(
     documents: list[str],
     titles: list[str],
     nr_topics: int,
     min_topic_size: int,
+    extra_stopwords: frozenset = frozenset(),
 ) -> list[dict]:
     print(f"[2/3] Fitting TF-IDF + NMF ({nr_topics} topics) ...", flush=True)
-    from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
+    from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.decomposition import NMF
 
-    stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
+    stop_words = _build_stop_words(extra_stopwords)
     vectorizer = TfidfVectorizer(
         max_df=0.70,
         min_df=max(2, min_topic_size // 2),
@@ -177,12 +183,13 @@ def _run_lda(
     titles: list[str],
     nr_topics: int,
     min_topic_size: int,
+    extra_stopwords: frozenset = frozenset(),
 ) -> list[dict]:
     print(f"[2/3] Fitting Count + LDA ({nr_topics} topics) ...", flush=True)
-    from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS
+    from sklearn.feature_extraction.text import CountVectorizer
     from sklearn.decomposition import LatentDirichletAllocation
 
-    stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
+    stop_words = _build_stop_words(extra_stopwords)
     # LDA requires raw term counts (not TF-IDF weights)
     vectorizer = CountVectorizer(
         max_df=0.70,
@@ -243,6 +250,7 @@ def _run_bertopic(
     min_topic_size: int,
     embedding_model_name: str,
     dim_reduction: str,
+    extra_stopwords: frozenset = frozenset(),
 ) -> tuple[list[dict], list[int]]:
     # NUMBA_DISABLE_JIT must be set before any numba-backed package is imported.
     # umap-learn and hdbscan both trigger numba at load time and SIGBUS on WSL2.
@@ -310,8 +318,8 @@ def _run_bertopic(
     cluster_model = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
 
     # Pass our stop-word list and lemmatizer so BERTopic's c-TF-IDF produces clean keywords.
-    from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS
-    stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
+    from sklearn.feature_extraction.text import CountVectorizer
+    stop_words = _build_stop_words(extra_stopwords)
     vectorizer_model = CountVectorizer(
         stop_words=stop_words,
         ngram_range=(1, 2),
@@ -364,6 +372,9 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--engine", choices=["nmf", "lda", "bertopic"], default="nmf",
                         help="nmf = TF-IDF+NMF (default); lda = LDA; bertopic = BERTopic")
+    parser.add_argument("--extra-stopwords", default="",
+                        help="Comma-separated words to suppress from topic keywords, "
+                             "e.g. --extra-stopwords russia,ukraine,nato")
     parser.add_argument("--embedding-model", default="all-MiniLM-L6-v2",
                         help="[bertopic only] sentence-transformers model")
     parser.add_argument("--dim-reduction", choices=["pca", "umap"], default="pca",
@@ -383,10 +394,16 @@ def main() -> int:
     else:
         transcript_desc = "full"
 
+    extra_stopwords = frozenset(
+        w.strip().lower() for w in args.extra_stopwords.split(",") if w.strip()
+    )
+
     print(f"Channel    : {channel.name}")
     print(f"Engine     : {args.engine}")
     print(f"Topics     : {args.nr_topics}")
     print(f"Transcripts: {transcript_desc}")
+    if extra_stopwords:
+        print(f"Extra stop : {', '.join(sorted(extra_stopwords))}")
     print()
 
     # Load index and filter
@@ -457,14 +474,14 @@ def main() -> int:
 
     # Run chosen engine
     if args.engine == "nmf":
-        topics = _run_nmf(documents, titles, args.nr_topics, args.min_topic_size)
+        topics = _run_nmf(documents, titles, args.nr_topics, args.min_topic_size, extra_stopwords)
     elif args.engine == "lda":
-        topics = _run_lda(documents, titles, args.nr_topics, args.min_topic_size)
+        topics = _run_lda(documents, titles, args.nr_topics, args.min_topic_size, extra_stopwords)
     else:
         topics, _ = _run_bertopic(
             documents, embedding_docs, titles, video_ids, cache_dir, channel.slug,
             args.nr_topics, args.min_topic_size,
-            args.embedding_model, args.dim_reduction,
+            args.embedding_model, args.dim_reduction, extra_stopwords,
         )
 
     # ── Print results ──────────────────────────────────────────────────────────
