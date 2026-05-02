@@ -102,6 +102,20 @@ _TRANSCRIPT_FILLERS = frozenset([
 ])
 
 
+def _make_lemma_tokenizer():
+    import re
+    import nltk
+    from nltk.stem import WordNetLemmatizer
+    nltk.download("wordnet", quiet=True)
+    nltk.download("omw-1.4", quiet=True)
+    _lem = WordNetLemmatizer()
+    # Matches sklearn's default token pattern (words of 2+ chars)
+    _token_re = re.compile(r"(?u)\b[a-z]{2,}\b")
+    def tokenizer(text: str) -> list[str]:
+        return [_lem.lemmatize(t) for t in _token_re.findall(text.lower())]
+    return tokenizer
+
+
 # ── Engine: sklearn TF-IDF + NMF ──────────────────────────────────────────────
 
 def _run_nmf(
@@ -121,6 +135,8 @@ def _run_nmf(
         max_features=5000,
         ngram_range=(1, 2),
         stop_words=stop_words,
+        tokenizer=_make_lemma_tokenizer(),
+        token_pattern=None,
     )
     tfidf = vectorizer.fit_transform(documents)
     print(f"  Vocabulary: {len(vectorizer.get_feature_names_out())} terms", flush=True)
@@ -174,6 +190,8 @@ def _run_lda(
         max_features=5000,
         ngram_range=(1, 2),
         stop_words=stop_words,
+        tokenizer=_make_lemma_tokenizer(),
+        token_pattern=None,
     )
     tf = vectorizer.fit_transform(documents)
     print(f"  Vocabulary: {len(vectorizer.get_feature_names_out())} terms", flush=True)
@@ -291,10 +309,15 @@ def _run_bertopic(
     n_clusters = nr_topics if nr_topics else 20
     cluster_model = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
 
-    # Pass our stop-word list so BERTopic's c-TF-IDF doesn't surface "the", "uh", etc.
+    # Pass our stop-word list and lemmatizer so BERTopic's c-TF-IDF produces clean keywords.
     from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS
     stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
-    vectorizer_model = CountVectorizer(stop_words=stop_words, ngram_range=(1, 2))
+    vectorizer_model = CountVectorizer(
+        stop_words=stop_words,
+        ngram_range=(1, 2),
+        tokenizer=_make_lemma_tokenizer(),
+        token_pattern=None,
+    )
 
     print("[5/5] Fitting BERTopic ...", flush=True)
     topic_model = BERTopic(
