@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import cache as cache_mod
 from yt_pl_ctr.fetcher import _TRANSCRIPT_SKIP_SECONDS, fetch_transcript, is_ci
 from yt_pl_ctr.models import Config
+from yt_pl_ctr.youtube import YouTubeClient, YouTubeAPIError
 
 
 def _default_cache_dir() -> Path:
@@ -98,12 +99,23 @@ def main():
     else:
         targets = [e for e in index if not cache_mod.has_transcript(cache_dir, e["video_id"])]
         if channel_config:
+            # Resolve channel_id from URL if not set in config
+            channel_id = channel_config.channel_id
+            if not channel_id:
+                try:
+                    youtube = YouTubeClient.from_env()
+                    channel_id = youtube.resolve_channel_id(channel_config.url)
+                    print(f"Resolved channel_id for {channel_config.name!r}: {channel_id}")
+                except (YouTubeAPIError, Exception) as e:
+                    print(f"Warning: could not resolve channel_id for {channel_config.name!r}: {e}", file=sys.stderr)
+                    print("  Add channel_id to configs/channels.yaml to avoid this.", file=sys.stderr)
+
             # Filter by channel_id (stored in episode metadata)
-            if channel_config.channel_id:
+            if channel_id:
                 filtered = []
                 for e in targets:
                     meta = cache_mod.read_metadata(cache_dir, e["video_id"])
-                    if meta and meta.get("channel_id") == channel_config.channel_id:
+                    if meta and meta.get("channel_id") == channel_id:
                         filtered.append(e)
                 targets = filtered
                 print(f"Channel filter ({channel_config.name}): {len(targets)} episodes")

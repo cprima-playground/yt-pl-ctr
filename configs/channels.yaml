@@ -227,6 +227,7 @@ channels:
 
   - name: "Neutrality Studies"
     url: "https://www.youtube.com/@neutralitystudies/videos"
+    channel_id: "UCHdLVKdAeG6zAeZMGZh91bg"
     playlist_prefix: "NS"
     min_duration: 300              # 5 min — skip very short clips
     ingest_limit: 5000             # fetch full back-catalogue
@@ -239,6 +240,7 @@ channels:
 
   - name: "The New Atlas"
     url: "https://www.youtube.com/@TheNewAtlas/videos"
+    channel_id: "UCVkSF37pPXkZbElFjBwUsEA"
     playlist_prefix: "TNA"
     min_duration: 300              # 5 min — skip very short clips
     ingest_limit: 5000             # fetch full back-catalogue
