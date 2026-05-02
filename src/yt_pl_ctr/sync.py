@@ -4,8 +4,8 @@ import logging
 from dataclasses import dataclass, field
 
 from .classifier import ClassificationResult, VideoClassifier
-from .fetcher import VideoFetcherProtocol, YtDlpFetcher
-from .models import ChannelConfig, Config, VideoMetadata
+from .fetcher import VideoFetcherProtocol, YtDlpFetcher, is_ci
+from .models import ChannelConfig, Config, PlaylistSettings, VideoMetadata
 from .youtube import YouTubeClient
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,8 @@ class ChannelSyncStats:
     videos_processed: int = 0
     videos_added: int = 0
     videos_skipped: int = 0
-    videos_skipped_default: int = 0  # Videos skipped due to skip_default setting
+    videos_skipped_default: int = 0
+    videos_reclassified: int = 0  # Moved from one playlist to another
     errors: int = 0
     classifications: dict[str, int] = field(default_factory=dict)
 
@@ -62,7 +63,6 @@ class ClassifiedVideo:
 def classify_channel_videos(
     channel_config: ChannelConfig,
     limit: int = 30,
-    use_wikipedia: bool | None = None,
     fetcher: VideoFetcherProtocol | None = None,
 ) -> list[ClassifiedVideo]:
     """
@@ -71,7 +71,6 @@ def classify_channel_videos(
     Args:
         channel_config: Channel configuration
         limit: Max videos to fetch
-        use_wikipedia: Override channel's use_wikipedia setting
         fetcher: VideoFetcherProtocol implementation (defaults to YtDlpFetcher)
 
     Returns:
@@ -79,8 +78,7 @@ def classify_channel_videos(
     """
     if fetcher is None:
         fetcher = YtDlpFetcher()
-    wiki_enabled = use_wikipedia if use_wikipedia is not None else channel_config.use_wikipedia
-    classifier = VideoClassifier(channel_config, use_wikipedia=wiki_enabled)
+    classifier = VideoClassifier(channel_config, use_transcripts=not is_ci())
     results = []
 
     for video in fetcher.fetch_channel_videos(channel_config.url, limit):
@@ -100,81 +98,139 @@ def classify_channel_videos(
 def sync_channel(
     channel_config: ChannelConfig,
     youtube: YouTubeClient,
-    playlist_settings: "PlaylistSettings",
+    playlist_settings: PlaylistSettings,
     fetcher: VideoFetcherProtocol,
     limit: int = 30,
     dry_run: bool = False,
-    use_wikipedia: bool | None = None,
 ) -> ChannelSyncStats:
-    """
-    Sync a single channel's videos to playlists.
+    """Sync a single channel's videos to playlists, reclassifying when needed.
 
-    Args:
-        channel_config: Channel configuration
-        youtube: YouTube API client
-        playlist_settings: Playlist creation settings
-        limit: Max videos to process
-        dry_run: If True, don't make changes
-        use_wikipedia: Override channel's use_wikipedia setting
-
-    Returns:
-        Sync statistics for this channel
+    At the start of each run, fetches all current playlist contents to build
+    an in-memory index {video_id: (category_key, playlist_item_id)}. This lets
+    us detect reclassifications and move videos without a persistent state file
+    — safe for ephemeral CI runners.
     """
     stats = ChannelSyncStats(channel_url=channel_config.url)
-    wiki_enabled = use_wikipedia if use_wikipedia is not None else channel_config.use_wikipedia
-    classifier = VideoClassifier(channel_config, use_wikipedia=wiki_enabled)
+    classifier = VideoClassifier(channel_config, use_transcripts=not is_ci())
 
-    # Cache for playlist IDs
+    # playlist name → playlist_id
     playlist_ids: dict[str, str] = {}
 
     logger.info("Processing channel: %s", channel_config.url)
 
+    # ── Build in-memory placement index ──────────────────────────────────────
+    # {video_id: {"category_key": ..., "playlist_item_id": ..., "playlist_id": ...}}
+    # Fetched from the actual YouTube playlists — no local state file needed.
+    placement: dict[str, dict] = {}
+
+    if not dry_run:
+        logger.info("Building placement index from existing playlists...")
+        for slug in channel_config.playlists:
+            pl_name = classifier.get_playlist_name(slug)
+            pl_id = youtube.find_playlist(pl_name)
+            if pl_id:
+                playlist_ids[pl_name] = pl_id
+                contents = youtube.get_playlist_contents(pl_id)
+                for vid_id, item_id in contents.items():
+                    placement[vid_id] = {
+                        "category_key": slug,
+                        "playlist_item_id": item_id,
+                        "playlist_id": pl_id,
+                    }
+                logger.debug("Indexed %d videos from %s", len(contents), pl_name)
+        logger.info(
+            "Placement index: %d videos across %d playlists", len(placement), len(playlist_ids)
+        )
+
+    # ── Process fetched videos ────────────────────────────────────────────────
+    cutoff = channel_config.min_upload_date_str()  # None if max_age_days not set
     for video in fetcher.fetch_channel_videos(channel_config.url, limit):
+        # Videos arrive newest-first; stop as soon as we pass the age window
+        if cutoff and video.upload_date and video.upload_date < cutoff:
+            logger.info("Reached age limit (%s < %s) — stopping fetch", video.upload_date, cutoff)
+            break
         stats.videos_processed += 1
 
         try:
-            # Classify video
             result = classifier.classify(video)
             stats.record_classification(result.category_key)
 
-            # Skip if marked as skipped (default category + skip_default enabled)
             if result.skipped:
-                logger.info(
-                    "[SKIP] '%s' -> default category (skip_default enabled)",
-                    video.title[:50],
-                )
+                logger.info("[SKIP] '%s' -> default (skip_default)", video.title[:50])
                 stats.videos_skipped_default += 1
                 continue
 
             playlist_name = classifier.get_playlist_name(result.category_key)
+            prev = placement.get(video.video_id)
 
             if dry_run:
-                logger.info(
-                    "[DRY RUN] '%s' -> %s (%s: %s)",
-                    video.title[:50],
-                    playlist_name,
-                    result.match_reason,
-                    result.matched_value or "n/a",
-                )
+                if prev and prev["category_key"] != result.category_key:
+                    logger.info(
+                        "[DRY RUN] RECLASSIFY '%s': %s → %s (%s: %s)",
+                        video.title[:50],
+                        prev["category_key"],
+                        result.category_key,
+                        result.match_reason,
+                        result.matched_value or "n/a",
+                    )
+                elif prev:
+                    logger.debug(
+                        "[DRY RUN] SKIP '%s' already in %s", video.title[:50], playlist_name
+                    )
+                else:
+                    logger.info(
+                        "[DRY RUN] ADD '%s' -> %s (%s: %s)",
+                        video.title[:50],
+                        playlist_name,
+                        result.match_reason,
+                        result.matched_value or "n/a",
+                    )
                 stats.videos_added += 1
                 continue
 
-            # Get or create playlist
+            # Already in the correct playlist — nothing to do
+            if prev and prev["category_key"] == result.category_key:
+                logger.debug("'%s' already in %s, skipping", video.title[:50], playlist_name)
+                stats.videos_skipped += 1
+                continue
+
+            # Ensure target playlist exists
             if playlist_name not in playlist_ids:
                 playlist_ids[playlist_name] = youtube.ensure_playlist(
                     playlist_name,
                     description=playlist_settings.description_template,
                     privacy=playlist_settings.privacy,
                 )
+            target_playlist_id = playlist_ids[playlist_name]
 
-            # Add video to playlist
-            playlist_id = playlist_ids[playlist_name]
-            if youtube.add_video_if_missing(playlist_id, video.video_id):
+            # Remove from old playlist if reclassified
+            if prev and prev["category_key"] != result.category_key:
+                try:
+                    youtube.remove_playlist_item(prev["playlist_item_id"])
+                    logger.info(
+                        "Removed '%s' from %s (reclassified → %s)",
+                        video.title[:50],
+                        prev["category_key"],
+                        result.category_key,
+                    )
+                    stats.videos_reclassified += 1
+                except Exception as e:
+                    logger.warning("Could not remove %s from old playlist: %s", video.video_id, e)
+
+            # Add to target playlist
+            playlist_item_id = youtube.add_video_if_missing(target_playlist_id, video.video_id)
+            if playlist_item_id:
+                placement[video.video_id] = {
+                    "category_key": result.category_key,
+                    "playlist_item_id": playlist_item_id,
+                    "playlist_id": target_playlist_id,
+                }
                 logger.info(
-                    "Added '%s' -> %s (%s)",
+                    "Added '%s' -> %s (%s: %s)",
                     video.title[:50],
                     playlist_name,
                     result.match_reason,
+                    result.matched_value or "n/a",
                 )
                 stats.videos_added += 1
             else:

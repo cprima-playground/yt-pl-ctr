@@ -11,6 +11,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from .models import VideoMetadata
+
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
@@ -75,25 +77,27 @@ def retry_on_rate_limit(func):
                 return func(*args, **kwargs)
             except HttpError as e:
                 if e.resp.status == 429:
-                    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                    delay = min(BASE_DELAY * (2**attempt), MAX_DELAY)
                     hours = delay / 3600
                     if delay >= 3600:
                         logger.warning(
                             "Rate limited (attempt %d/%d), waiting %.1f hours...",
-                            attempt + 1, MAX_RETRIES, hours,
+                            attempt + 1,
+                            MAX_RETRIES,
+                            hours,
                         )
                     else:
                         logger.warning(
                             "Rate limited (attempt %d/%d), waiting %.0f seconds...",
-                            attempt + 1, MAX_RETRIES, delay,
+                            attempt + 1,
+                            MAX_RETRIES,
+                            delay,
                         )
                     time.sleep(delay)
                     last_error = e
                 else:
                     raise
-        raise RateLimitError(
-            f"Rate limit exceeded after {MAX_RETRIES} retries"
-        ) from last_error
+        raise RateLimitError(f"Rate limit exceeded after {MAX_RETRIES} retries") from last_error
 
     return wrapper
 
@@ -104,7 +108,9 @@ class YouTubeClient:
 
     _service: object = field(repr=False)
     _playlist_cache: dict[str, str] = field(default_factory=dict, repr=False)
-    _added_videos: set[tuple[str, str]] = field(default_factory=set, repr=False)  # (playlist_id, video_id)
+    _added_videos: set[tuple[str, str]] = field(
+        default_factory=set, repr=False
+    )  # (playlist_id, video_id)
     _channel_id_cache: dict[str, str] = field(default_factory=dict, repr=False)
     _uploads_playlist_cache: dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -180,9 +186,7 @@ class YouTubeClient:
         return None
 
     @retry_on_rate_limit
-    def create_playlist(
-        self, title: str, description: str = "", privacy: str = "public"
-    ) -> str:
+    def create_playlist(self, title: str, description: str = "", privacy: str = "public") -> str:
         """
         Create a new playlist.
 
@@ -222,9 +226,7 @@ class YouTubeClient:
                 raise  # Let decorator handle quota wait
             raise YouTubeAPIError(f"Failed to create playlist '{title}': {e}") from e
 
-    def ensure_playlist(
-        self, title: str, description: str = "", privacy: str = "public"
-    ) -> str:
+    def ensure_playlist(self, title: str, description: str = "", privacy: str = "public") -> str:
         """
         Find existing playlist or create new one.
 
@@ -268,66 +270,142 @@ class YouTubeClient:
             raise
 
     @retry_on_rate_limit
-    def add_video_to_playlist(self, playlist_id: str, video_id: str) -> bool:
-        """
-        Add a video to a playlist.
-
-        Args:
-            playlist_id: Target playlist ID
-            video_id: Video ID to add
-
-        Returns:
-            True if added, False if already exists
-        """
+    def add_video_to_playlist(self, playlist_id: str, video_id: str) -> str:
+        """Add a video to a playlist. Returns the playlist_item_id."""
         _rate_limit_delay()
         logger.info("API CALL: playlistItems.insert (%s)", video_id)
         try:
-            self._service.playlistItems().insert(
-                part="snippet",
-                body={
-                    "snippet": {
-                        "playlistId": playlist_id,
-                        "resourceId": {"kind": "youtube#video", "videoId": video_id},
-                    }
-                },
-            ).execute()
-            # Track in session cache to prevent duplicates
+            response = (
+                self._service.playlistItems()
+                .insert(
+                    part="snippet",
+                    body={
+                        "snippet": {
+                            "playlistId": playlist_id,
+                            "resourceId": {"kind": "youtube#video", "videoId": video_id},
+                        }
+                    },
+                )
+                .execute()
+            )
+            playlist_item_id = response["id"]
             self._added_videos.add((playlist_id, video_id))
-            logger.info("Added video %s to playlist %s", video_id, playlist_id)
-            return True
+            logger.info(
+                "Added video %s to playlist %s (item %s)", video_id, playlist_id, playlist_item_id
+            )
+            return playlist_item_id
         except HttpError as e:
             if e.resp.status == 409:
-                logger.debug("Video %s already in playlist %s", video_id, playlist_id)
-                return False
+                raise YouTubeAPIError(f"Video {video_id} already in playlist {playlist_id}") from e
             if e.resp.status == 429:
-                raise  # Let decorator handle quota wait
-            raise YouTubeAPIError(
-                f"Failed to add video {video_id} to playlist: {e}"
-            ) from e
+                raise
+            raise YouTubeAPIError(f"Failed to add video {video_id} to playlist: {e}") from e
 
-    def add_video_if_missing(self, playlist_id: str, video_id: str) -> bool:
+    def add_video_if_missing(self, playlist_id: str, video_id: str) -> str | None:
+        """Add video to playlist only if not already present.
+
+        Returns the playlist_item_id if added, None if already present.
         """
-        Add video to playlist only if not already present.
-
-        Args:
-            playlist_id: Target playlist ID
-            video_id: Video ID to add
-
-        Returns:
-            True if added, False if already present
-        """
-        # Check session cache first (handles API eventual consistency)
         if (playlist_id, video_id) in self._added_videos:
             logger.debug("Video %s already added in this session, skipping", video_id)
-            return False
+            return None
 
-        # Check YouTube API
         if self.playlist_contains_video(playlist_id, video_id):
             logger.debug("Video %s already in playlist, skipping", video_id)
-            self._added_videos.add((playlist_id, video_id))  # Cache for future checks
-            return False
+            self._added_videos.add((playlist_id, video_id))
+            return None
 
         return self.add_video_to_playlist(playlist_id, video_id)
+
+    @retry_on_rate_limit
+    def get_playlist_contents(self, playlist_id: str) -> dict[str, str]:
+        """Fetch all items in a playlist. Returns {video_id: playlist_item_id}.
+
+        playlist_item_id (not video_id) is required by playlistItems.delete.
+        """
+        result: dict[str, str] = {}
+        page_token: str | None = None
+        while True:
+            _rate_limit_delay()
+            kwargs: dict = {"part": "contentDetails", "playlistId": playlist_id, "maxResults": 50}
+            if page_token:
+                kwargs["pageToken"] = page_token
+            try:
+                response = self._service.playlistItems().list(**kwargs).execute()
+            except HttpError as e:
+                if e.resp.status == 404:
+                    return result
+                raise
+            for item in response.get("items", []):
+                vid = item["contentDetails"].get("videoId")
+                if vid:
+                    result[vid] = item["id"]  # item["id"] is the playlist_item_id
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        return result
+
+    @retry_on_rate_limit
+    def remove_playlist_item(self, playlist_item_id: str) -> None:
+        """Remove a video from a playlist by playlist_item_id.
+
+        Uses playlistItems.delete — requires the item ID, not the video ID.
+        Silently ignores 404 (item already removed or never existed).
+        """
+        _rate_limit_delay()
+        logger.info("API CALL: playlistItems.delete (%s)", playlist_item_id)
+        try:
+            self._service.playlistItems().delete(id=playlist_item_id).execute()
+        except HttpError as e:
+            if e.resp.status == 404:
+                logger.debug("Playlist item %s already gone", playlist_item_id)
+                return
+            if e.resp.status == 429:
+                raise
+            raise YouTubeAPIError(f"Failed to remove playlist item {playlist_item_id}: {e}") from e
+
+    # ── Playlist membership ───────────────────────────────────────────────────
+
+    @retry_on_rate_limit
+    def list_my_playlists(self) -> list[dict]:
+        """Return all playlists owned by the authenticated user.
+
+        Each entry: {id, title, item_count}.
+        Costs 1 quota unit per page (50 playlists per page).
+        """
+        results = []
+        request = self._service.playlists().list(
+            part="snippet,contentDetails", mine=True, maxResults=50
+        )
+        while request:
+            _rate_limit_delay()
+            logger.debug("API CALL: playlists.list")
+            response = request.execute()
+            for item in response.get("items", []):
+                pid = item["id"]
+                title = item["snippet"]["title"]
+                item_count = item.get("contentDetails", {}).get("itemCount", 0)
+                self._playlist_cache[title] = pid
+                results.append({"id": pid, "title": title, "item_count": item_count})
+            request = self._service.playlists().list_next(request, response)
+        return results
+
+    def load_all_membership(self) -> dict:
+        """Bulk-fetch membership across all user playlists.
+
+        Returns {"playlists": {id: title}, "membership": {video_id: [playlist_id, ...]}}.
+        Quota cost: ~1 unit (playlists.list) + 1 per playlist page of items.
+        """
+        playlists = self.list_my_playlists()
+        playlist_titles = {p["id"]: p["title"] for p in playlists}
+        membership: dict[str, list[str]] = {}
+        for p in playlists:
+            pid = p["id"]
+            logger.info("Fetching playlist items: %s (%d videos)", p["title"], p["item_count"])
+            contents = self.get_playlist_contents(pid)
+            for video_id in contents:
+                membership.setdefault(video_id, []).append(pid)
+        return {"playlists": playlist_titles, "membership": membership}
 
     # ── Video fetching ────────────────────────────────────────────────────────
 
@@ -353,11 +431,7 @@ class YouTubeClient:
             handle = handle_match.group(1)
             _rate_limit_delay()
             logger.debug("API CALL: channels.list(forHandle=%s)", handle)
-            response = (
-                self._service.channels()
-                .list(part="id", forHandle=handle)
-                .execute()
-            )
+            response = self._service.channels().list(part="id", forHandle=handle).execute()
             items = response.get("items", [])
             if not items:
                 raise YouTubeAPIError(f"Channel not found for handle: @{handle}")
@@ -379,11 +453,7 @@ class YouTubeClient:
 
         _rate_limit_delay()
         logger.debug("API CALL: channels.list(contentDetails, id=%s)", channel_id)
-        response = (
-            self._service.channels()
-            .list(part="contentDetails", id=channel_id)
-            .execute()
-        )
+        response = self._service.channels().list(part="contentDetails", id=channel_id).execute()
         items = response.get("items", [])
         if not items:
             raise YouTubeAPIError(f"Channel not found: {channel_id}")
@@ -403,11 +473,11 @@ class YouTubeClient:
         """
         _rate_limit_delay()
         logger.debug("API CALL: playlistItems.list(%s)", playlist_id)
-        kwargs: dict = dict(
-            part="contentDetails",
-            playlistId=playlist_id,
-            maxResults=min(max_results, 50),
-        )
+        kwargs: dict = {
+            "part": "contentDetails",
+            "playlistId": playlist_id,
+            "maxResults": min(max_results, 50),
+        }
         if page_token:
             kwargs["pageToken"] = page_token
         response = self._service.playlistItems().list(**kwargs).execute()
@@ -424,8 +494,6 @@ class YouTubeClient:
         """
         Fetch full metadata for up to 50 videos in one API call. Costs 1 quota unit.
         """
-        from .models import VideoMetadata
-
         if not video_ids:
             return []
 
@@ -455,7 +523,7 @@ class YouTubeClient:
                     upload_date=_parse_upload_date(snippet.get("publishedAt", "")),
                     duration=_parse_iso8601_duration(content.get("duration", "")),
                     view_count=int(stats["viewCount"]) if stats.get("viewCount") else None,
+                    tags=snippet.get("tags", []),
                 )
             )
         return results
-

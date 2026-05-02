@@ -56,3 +56,19 @@ queue/
 
 # State file (backfill progress)
 .yt-pl-ctr-state.json
+
+# Large local episode cache (development use, not committed)
+cache/
+
+# NLTK downloaded data
+nltk_data/
+
+# Corpus output files (generated, not committed)
+labeled.json
+unlabeled.json
+classified.json
+to_label.json
+
+
+# uv lock (committed) — but ignore local wheel cache
+.uv/

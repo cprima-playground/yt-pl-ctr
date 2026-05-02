@@ -7,9 +7,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import os
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -27,27 +29,33 @@ creds = Credentials(
 )
 service = build("youtube", "v3", credentials=creds)
 
+
 def test_playlist(privacy: str) -> bool:
     """Test creating a playlist with given privacy. Returns True if successful."""
     print(f"\nTesting {privacy.upper()} playlist creation...")
     try:
-        result = service.playlists().insert(
-            part="snippet,status",
-            body={
-                "snippet": {"title": f"_test_{privacy}", "description": "test"},
-                "status": {"privacyStatus": privacy},
-            },
-        ).execute()
+        result = (
+            service.playlists()
+            .insert(
+                part="snippet,status",
+                body={
+                    "snippet": {"title": f"_test_{privacy}", "description": "test"},
+                    "status": {"privacyStatus": privacy},
+                },
+            )
+            .execute()
+        )
         playlist_id = result["id"]
         print(f"  SUCCESS: Created {privacy} playlist {playlist_id}")
 
         # Clean up
         service.playlists().delete(id=playlist_id).execute()
-        print(f"  Cleaned up")
+        print("  Cleaned up")
         return True
     except HttpError as e:
         print(f"  FAILED: {e.resp.status} - {e.reason}")
         return False
+
 
 # Test both
 print("Direct API test (no retry wrapper)")

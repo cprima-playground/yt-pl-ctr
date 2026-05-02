@@ -1,11 +1,19 @@
-"""Video classification logic with per-channel category mappings and Wikipedia lookup."""
+"""Video classification using a trained ML model (TF-IDF + logistic regression).
+
+Classification is content-first: title + description + transcript of the specific
+episode drives the decision. Guest identity is not used — the same guest appearing
+in multiple episodes may have different primary topics depending on the conversation.
+
+The model is loaded from $YT_CACHE_DIR/model/ at instantiation time. If no model
+is found, all episodes are skipped (no playlist assignment).
+"""
 
 import logging
-import re
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
-from .models import Category, ChannelConfig, VideoMetadata
-from .wikipedia import WikipediaInfo, lookup_person
+from .models import ChannelConfig, VideoMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -16,249 +24,164 @@ class ClassificationResult:
 
     category_key: str
     category_name: str
-    match_reason: str  # "priority_keyword", "guest", "wikipedia", "title_keyword", "description_keyword", "description_pattern", "default"
-    matched_value: str | None = None
-    wikipedia_info: WikipediaInfo | None = None
-    skipped: bool = False  # True if this video should be skipped (default category + skip_default)
+    match_reason: str          # "ml_model" | "no_model" | "low_confidence" | "unknown_category"
+    matched_value: str | None = None   # confidence score as string
+    skipped: bool = False
 
 
 class VideoClassifier:
-    """Classifier for videos based on channel-specific category mappings."""
+    """Content-first video classifier backed by a trained ML model.
 
-    def __init__(self, channel_config: ChannelConfig, use_wikipedia: bool = True):
-        """
-        Initialize classifier with channel configuration.
+    The model is trained by scripts/train_classifier.py and stored in
+    $YT_CACHE_DIR/model/pipeline.pkl + label_encoder.pkl.
+    """
 
-        Args:
-            channel_config: Channel-specific configuration with categories
-            use_wikipedia: Whether to use Wikipedia for classification
-        """
+    def __init__(
+        self,
+        channel_config: ChannelConfig,
+        use_transcripts: bool = True,
+        min_confidence: float | None = None,
+    ):
         self.config = channel_config
-        self.use_wikipedia = use_wikipedia
-        self._guest_pattern = re.compile(channel_config.guest_pattern)
-        self._compile_patterns()
+        self.use_transcripts = use_transcripts
+        self.min_confidence = min_confidence if min_confidence is not None else channel_config.ml_confidence_threshold
+        self._pipeline = None
+        self._label_encoder = None
+        self._load_model()
 
-    def _compile_patterns(self) -> None:
-        """Pre-compile regex patterns for efficiency."""
-        self._description_patterns: dict[str, list[re.Pattern]] = {}
-        for key, category in self.config.categories.items():
-            self._description_patterns[key] = [
-                re.compile(p, re.IGNORECASE) for p in category.description_patterns
-            ]
+    def _load_model(self) -> None:
+        # Look in repo models/{channel_slug}/ then models/ then cache fallback
+        repo_root = Path(__file__).parents[2]
+        channel_slug = self.config.slug
+        cache_env = os.environ.get("YT_CACHE_DIR")
+        cache_model_dir = Path(cache_env) / "model" if cache_env else None
 
-    def extract_guest(self, title: str) -> str | None:
-        """Extract guest name from video title using channel's pattern."""
-        match = self._guest_pattern.search(title or "")
-        return match.group(1).strip() if match else None
+        candidates = [
+            repo_root / "models" / channel_slug,
+            repo_root / "models",
+            cache_model_dir,
+        ]
+        model_dir = None
+        for candidate in candidates:
+            if candidate and (candidate / "pipeline.pkl").exists():
+                model_dir = candidate
+                break
 
-    def _classify_by_wikipedia(self, guest: str) -> ClassificationResult | None:
-        """
-        Try to classify based on Wikipedia lookup.
+        if model_dir is None:
+            logger.warning("No trained model found — run train_classifier.py first")
+            return
 
-        Args:
-            guest: Guest name to look up
+        pipeline_path = model_dir / "pipeline.pkl"
+        le_path = model_dir / "label_encoder.pkl"
+        if not pipeline_path.exists() or not le_path.exists():
+            logger.warning("Incomplete model at %s — run train_classifier.py first", model_dir)
+            return
+        try:
+            import joblib
+            self._pipeline = joblib.load(pipeline_path)
+            self._label_encoder = joblib.load(le_path)
+            logger.info(
+                "ML model loaded: %d classes (%s)",
+                len(self._label_encoder.classes_),
+                ", ".join(self._label_encoder.classes_),
+            )
+        except Exception as e:
+            logger.error("Failed to load ML model: %s", e)
 
-        Returns:
-            ClassificationResult if a matching topic is found, None otherwise
-        """
-        if not self.use_wikipedia or not guest:
-            return None
+    def _build_features(self, video: VideoMetadata) -> str:
+        """Replicate the feature string used during training (title ×5 + desc + transcript)."""
+        title = video.title or ""
+        desc = (video.description or "").split("\n")[0]
+        transcript = ""
+        if self.use_transcripts:
+            transcript = self._load_transcript(video.video_id) or ""
+        combined = (title + " ") * 5
+        if desc:
+            combined += desc + " "
+        if transcript:
+            combined += transcript
+        return combined.strip()
 
-        # Handle multiple guests - try each one
-        guest_names = [g.strip() for g in re.split(r"\s*[&,]\s*", guest)]
-
-        for name in guest_names:
-            if len(name) < 3:
-                continue
-
-            info = lookup_person(name)
-            if not info.found or not info.topics:
-                continue
-
-            # Check if any Wikipedia topic matches our categories
-            for topic in info.topics:
-                if topic in self.config.categories:
-                    category = self.config.categories[topic]
-                    logger.info(
-                        "Wikipedia: '%s' -> %s (from Wikipedia: %s)",
-                        name,
-                        topic,
-                        info.url,
-                    )
-                    return ClassificationResult(
-                        category_key=topic,
-                        category_name=category.name,
-                        match_reason="wikipedia",
-                        matched_value=f"{name} ({', '.join(info.topics[:3])})",
-                        wikipedia_info=info,
-                    )
-
+    def _load_transcript(self, video_id: str) -> str | None:
+        cache_dir = os.environ.get("YT_CACHE_DIR")
+        if cache_dir:
+            f = Path(cache_dir) / "episodes" / video_id / "transcript.txt"
+            if f.exists():
+                return f.read_text(encoding="utf-8")
         return None
 
     def classify(self, video: VideoMetadata) -> ClassificationResult:
-        """
-        Classify a video into a category.
+        if self._pipeline is None:
+            return ClassificationResult(
+                category_key="other",
+                category_name="Other",
+                match_reason="no_model",
+                skipped=True,
+            )
 
-        Classification priority:
-        1. Priority keywords (categories with priority set)
-        2. Guest name match (config)
-        3. Wikipedia lookup (by guest name)
-        4. Title keyword match
-        5. Description pattern match (regex)
-        6. Description keyword match
-        7. Default category
+        features = self._build_features(video)
+        proba = self._pipeline.predict_proba([features])[0]
+        best_idx = int(proba.argmax())
+        confidence = float(proba[best_idx])
+        category_key = self._label_encoder.classes_[best_idx]
 
-        Args:
-            video: Video metadata to classify
+        if confidence < self.min_confidence:
+            logger.debug(
+                "Video '%s' — low confidence %.2f for '%s', skipping",
+                video.title, confidence, category_key,
+            )
+            return ClassificationResult(
+                category_key="other",
+                category_name="Other",
+                match_reason="low_confidence",
+                matched_value=f"{category_key}@{confidence:.2f}",
+                skipped=True,
+            )
 
-        Returns:
-            ClassificationResult with category and match reason
-        """
-        guest = self.extract_guest(video.title)
+        known_slugs = set(self.config.all_leaf_slugs())
+        if category_key not in known_slugs:
+            logger.debug(
+                "Video '%s' — model predicted '%s' not in current taxonomy, skipping",
+                video.title, category_key,
+            )
+            return ClassificationResult(
+                category_key="other",
+                category_name="Other",
+                match_reason="unknown_category",
+                matched_value=category_key,
+                skipped=True,
+            )
 
-        # Use only the first paragraph of description (before any newline)
-        # This avoids matching sponsor text in subsequent lines
-        description = video.description.split("\n")[0] if video.description else ""
-        title_lower = video.title.lower()
-        desc_lower = description.lower()
+        # Skip if this topic is not configured as a playlist
+        if category_key not in self.config.playlists:
+            logger.debug(
+                "Video '%s' -> %s (no playlist configured, skipping)",
+                video.title, category_key,
+            )
+            return ClassificationResult(
+                category_key=category_key,
+                category_name=category_key.replace("_", " ").title(),
+                match_reason="ml_model",
+                matched_value=f"{confidence:.2f}",
+                skipped=True,
+            )
 
-        # Priority 1: Check priority categories first (e.g., ancient_history with priority: 1)
-        priority_categories = [
-            (key, cat) for key, cat in self.config.categories.items()
-            if cat.priority is not None
-        ]
-        priority_categories.sort(key=lambda x: x[1].priority or 999)
-
-        for key, category in priority_categories:
-            for keyword in category.keywords:
-                kw_lower = keyword.lower()
-                if kw_lower in title_lower or kw_lower in desc_lower:
-                    logger.debug(
-                        "Video '%s' -> %s (priority keyword: %s)",
-                        video.title,
-                        key,
-                        keyword,
-                    )
-                    return ClassificationResult(
-                        category_key=key,
-                        category_name=category.name,
-                        match_reason="priority_keyword",
-                        matched_value=keyword,
-                    )
-
-        # Priority 2: Guest name match from config (supports multiple guests)
-        if guest:
-            guest_lower = guest.lower()
-            for key, category in self.config.categories.items():
-                for known_guest in category.guests:
-                    known_lower = known_guest.lower()
-                    if known_lower == guest_lower or known_lower in guest_lower:
-                        logger.debug(
-                            "Video '%s' -> %s (guest: %s matched %s)",
-                            video.title,
-                            key,
-                            known_guest,
-                            guest,
-                        )
-                        return ClassificationResult(
-                            category_key=key,
-                            category_name=category.name,
-                            match_reason="guest",
-                            matched_value=known_guest,
-                        )
-
-        # Priority 3: Wikipedia lookup
-        if guest and self.use_wikipedia:
-            wiki_result = self._classify_by_wikipedia(guest)
-            if wiki_result:
-                return wiki_result
-
-        # Priority 3: Title keyword match (skip priority categories already checked)
-        priority_keys = {key for key, cat in self.config.categories.items() if cat.priority is not None}
-        for key, category in self.config.categories.items():
-            if key in priority_keys:
-                continue
-            for keyword in category.keywords:
-                if keyword.lower() in title_lower:
-                    logger.debug(
-                        "Video '%s' -> %s (title keyword: %s)",
-                        video.title,
-                        key,
-                        keyword,
-                    )
-                    return ClassificationResult(
-                        category_key=key,
-                        category_name=category.name,
-                        match_reason="title_keyword",
-                        matched_value=keyword,
-                    )
-
-        # Priority 4: Description pattern match (regex)
-        for key, patterns in self._description_patterns.items():
-            for pattern in patterns:
-                if pattern.search(description):
-                    category = self.config.categories[key]
-                    logger.debug(
-                        "Video '%s' -> %s (description pattern)",
-                        video.title,
-                        key,
-                    )
-                    return ClassificationResult(
-                        category_key=key,
-                        category_name=category.name,
-                        match_reason="description_pattern",
-                        matched_value=pattern.pattern,
-                    )
-
-        # Priority 5: Description keyword match (skip priority categories already checked)
-        for key, category in self.config.categories.items():
-            if key in priority_keys:
-                continue
-            for keyword in category.keywords:
-                if keyword.lower() in desc_lower:
-                    logger.debug(
-                        "Video '%s' -> %s (description keyword: %s)",
-                        video.title,
-                        key,
-                        keyword,
-                    )
-                    return ClassificationResult(
-                        category_key=key,
-                        category_name=category.name,
-                        match_reason="description_keyword",
-                        matched_value=keyword,
-                    )
-
-        # Priority 6: Default category
-        logger.debug("Video '%s' -> %s (default)", video.title, self.config.default_category)
-        result = ClassificationResult(
-            category_key=self.config.default_category,
-            category_name=self.config.default_category.replace("_", " ").title(),
-            match_reason="default",
+        logger.debug(
+            "Video '%s' -> %s (ml_model, conf=%.2f)",
+            video.title, category_key, confidence,
+        )
+        return ClassificationResult(
+            category_key=category_key,
+            category_name=category_key.replace("_", " ").title(),
+            match_reason="ml_model",
+            matched_value=f"{confidence:.2f}",
         )
 
-        # Mark as skipped if skip_default is enabled
-        if self.config.skip_default:
-            result.skipped = True
-
-        return result
-
-    def get_playlist_name(self, category_key: str) -> str:
-        """
-        Get the full playlist name for a category.
-
-        Args:
-            category_key: Category key
-
-        Returns:
-            Full playlist name with prefix
-        """
-        category = self.config.categories.get(category_key)
-        if category:
-            name = category.name
-        else:
-            name = category_key.replace("_", " ").title()
-
+    def get_playlist_name(self, slug: str) -> str:
+        title = self.config.playlist_title(slug)
+        if title:
+            return title
+        name = slug.replace("_", " ").title()
         if self.config.playlist_prefix:
             return f"{self.config.playlist_prefix} – {name}"
         return name

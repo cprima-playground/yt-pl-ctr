@@ -1,193 +1,210 @@
-# Multi-channel playlist configuration
+# yt-pl-ctr channel configuration
+
 playlist_settings:
   privacy: unlisted
   description_template: "Auto-curated by yt-pl-ctr"
 
-limit: 30
-
 channels:
-  # Joe Rogan Experience
-  - url: "https://www.youtube.com/@joerogan/videos"
+  - name: "Joe Rogan Experience"
+    url: "https://www.youtube.com/@joerogan/videos"
+    channel_id: "UCzQUP1qoWDoEbmsQxvdjxgQ"
     playlist_prefix: "JRE"
-    default_category: "other"
-    skip_default: true  # Only add videos that match a category
-    use_wikipedia: true  # Use Wikipedia to classify unknown guests
-    guest_pattern: "\\s-\\s(.+)$"
-    min_duration: 3600  # Skip videos shorter than 1 hour
-    categories:
-      science_tech:
-        name: "Science & Technology"
-        keywords:
-          - "artificial intelligence"
-          - "neuroscience"
-          - "biology"
-          - "physics"
-          - "space"
-          - "NASA"
-          - "SpaceX"
-          - "technology"
-          - "science"
-          - "research"
-          - "brain"
-          - "quantum"
-        guests:
-          - "Elon Musk"
-          - "Andrew Huberman"
-          - "Lex Fridman"
-          - "Neil deGrasse Tyson"
-          - "Brian Cox"
-          - "Rhonda Patrick"
-          - "Sam Harris"
-          - "Matthew Walker"
-          - "Paul Stamets"
+    min_duration: 3600
+    ml_confidence_threshold: 0.08
 
-      ufo_aliens:
-        name: "UFOs & Extraterrestrial Life"
-        keywords:
-          - "UFO"
-          - "UAP"
-          - "alien"
-          - "extraterrestrial"
-          - "disclosure"
-          - "Pentagon"
-          - "abduction"
-          - "Roswell"
-          - "Area 51"
-        guests:
-          - "Bob Lazar"
-          - "Jeremy Corbell"
-          - "David Fravor"
-          - "Luis Elizondo"
-          - "George Knapp"
-          - "Jacques Vallee"
+    # Every node has the same shape: slug + label + optional children.
+    # Leaf nodes (no children) are the ML class labels.
+    taxonomy:
+      - slug: history_unexplained
+        label: "History & Unexplained"
+        children:
+          - slug: ancient_civilizations
+            label: "ancient civilizations"
+          - slug: ufo_extraterrestrial
+            label: "ufo / extraterrestrial"
+          - slug: paranormal_cryptozoology
+            label: "paranormal / cryptozoology"
+          - slug: conspiracy_theories
+            label: "conspiracy theories"
+          - slug: anthropology_archaeology
+            label: "anthropology & archaeology"
 
-      politics:
-        name: "Politics & Current Events"
-        keywords:
-          - "election"
-          - "president"
-          - "congress"
-          - "senator"
-          - "policy"
-          - "government"
-          - "immigration"
-          - "border"
-          - "democracy"
-          - "republican"
-          - "democrat"
-          - "political"
-        guests:
-          - "Bernie Sanders"
-          - "Tulsi Gabbard"
-          - "Dan Crenshaw"
-          - "Ben Shapiro"
-          - "Jordan Peterson"
-          - "Candace Owens"
-          - "Tim Pool"
+      - slug: science_mind
+        label: "Science & Mind"
+        children:
+          - slug: psychology_mental_health
+            label: "psychology & mental health"
+          - slug: neuroscience
+            label: "neuroscience"
+          - slug: health_medicine
+            label: "health & medicine"
+          - slug: nutrition_diet
+            label: "nutrition & diet"
+          - slug: longevity_biohacking
+            label: "longevity & biohacking"
+          - slug: biology_evolution
+            label: "biology & evolution"
+          - slug: physics_mathematics
+            label: "physics & mathematics"
+          - slug: space_astronomy
+            label: "space & astronomy"
+          - slug: natural_history_wildlife
+            label: "natural history & wildlife"
+          - slug: environment_climate
+            label: "environment & climate"
 
-      comedy:
-        name: "Comedy & Entertainment"
-        keywords:
-          - "comedy"
-          - "stand-up"
-          - "standup"
-          - "comedian"
-          - "funny"
-          - "Netflix special"
-          - "movie"
-          - "actor"
-          - "actress"
-        guests:
-          - "Dave Chappelle"
-          - "Joe List"
-          - "Mark Normand"
-          - "Shane Gillis"
-          - "Andrew Schulz"
-          - "Theo Von"
-          - "Tom Segura"
-          - "Bert Kreischer"
-          - "Bill Burr"
-          - "Tony Hinchcliffe"
-          - "Whitney Cummings"
-          - "Tim Dillon"
-          - "Bobby Lee"
-          - "Ari Shaffir"
-          - "Duncan Trussell"
-          - "Joey Diaz"
-          - "Brian Redban"
-          - "Donnell Rawlings"
+      - slug: technology_economy
+        label: "Technology & Economy"
+        children:
+          - slug: technology
+            label: "technology"
+          - slug: artificial_intelligence
+            label: "artificial intelligence"
+          - slug: cryptocurrency_finance
+            label: "cryptocurrency & finance"
+          - slug: economics_business
+            label: "economics & business"
+          - slug: entrepreneurship
+            label: "entrepreneurship"
 
-      mma_martial_arts:
-        name: "Martial Arts & MMA"
-        keywords:
-          - "UFC"
-          - "MMA"
-          - "fighter"
-          - "boxing"
-          - "wrestling"
-          - "champion"
-          - "jiu-jitsu"
-          - "BJJ"
-          - "kickboxing"
-          - "Bellator"
-          - "knockout"
-        guests:
-          - "Jocko Willink"
-          - "David Goggins"
-          - "Cameron Hanes"
-          - "Gordon Ryan"
-          - "Israel Adesanya"
-          - "Conor McGregor"
-          - "Georges St-Pierre"
-          - "GSP"
-          - "Khabib Nurmagomedov"
-          - "Jon Jones"
-          - "Francis Ngannou"
-          - "John Danaher"
-          - "Eddie Bravo"
-          - "Bas Rutten"
+      - slug: society_culture
+        label: "Society & Culture"
+        children:
+          - slug: politics_government
+            label: "politics & government"
+          - slug: social_issues_culture
+            label: "social issues & culture"
+          - slug: true_crime
+            label: "true crime"
+          - slug: law_justice
+            label: "law & justice"
+          - slug: military_veterans
+            label: "military & veterans"
+          - slug: religion_spirituality
+            label: "religion & spirituality"
+          - slug: philosophy
+            label: "philosophy"
+          - slug: drugs_psychedelics
+            label: "drugs & psychedelics"
 
-      ancient_history:
-        name: "Ancient History & Alternative Theories"
-        priority: 1  # Check keywords before Wikipedia
-        keywords:
-          - "ancient"
-          - "ancient history"
-          - "ancient mysteries"
-          - "ancient engineering"
-          - "civilization"
-          - "archaeology"
-          - "archaeologist"
-          - "pyramids"
-          - "Egypt"
-          - "Egyptian"
-          - "Göbekli Tepe"
-          - "lost civilization"
-          - "prehistoric"
-          - "Sphinx"
-          - "Atlantis"
-          - "megalith"
-          - "megalithic"
-          - "Younger Dryas"
-          - "Ice Age"
-          - "Mesopotamia"
-          - "Sumerian"
-          - "Mayan"
-          - "Aztec"
-          - "Inca"
-          - "Stonehenge"
-          - "ancient temple"
-          - "ancient monument"
-        guests:
-          - "Graham Hancock"
-          - "Randall Carlson"
-          - "John Anthony West"
-          - "Robert Schoch"
-          - "Brien Foerster"
-          - "Ben van Kerkwyk"
-          - "Jimmy Corsetti"
-          - "UnchartedX"
+      - slug: arts_entertainment
+        label: "Arts & Entertainment"
+        children:
+          - slug: comedy
+            label: "comedy"
+          - slug: music
+            label: "music"
+          - slug: film_television
+            label: "film & television"
+          - slug: literature_storytelling
+            label: "literature & storytelling"
 
-      other:
-        name: "Other"
-        keywords: []
+      - slug: sports_outdoors
+        label: "Sports & Outdoors"
+        children:
+          - slug: combat_sports_mma
+            label: "combat sports & mma"
+          - slug: hunting_fishing
+            label: "hunting & fishing"
+          - slug: fitness_training
+            label: "fitness & training"
+          - slug: extreme_sports_adventure
+            label: "extreme sports & adventure"
+
+      - slug: lifestyle
+        label: "Lifestyle"
+        children:
+          - slug: food_cooking
+            label: "food & cooking"
+          - slug: motivation_self_improvement
+            label: "motivation & self-improvement"
+
+    # Slugs that become YouTube playlists — must match leaf slugs in taxonomy.
+    playlists:
+      ancient_civilizations:
+        title: "JRE – History & Unexplained – Ancient Civilizations & Alternative History"
+      ufo_extraterrestrial:
+        title: "JRE – History & Unexplained – UFO, Paranormal & Cryptozoology"
+      paranormal_cryptozoology:
+        title: "JRE – History & Unexplained – UFO, Paranormal & Cryptozoology"
+      psychology_mental_health:
+        title: "JRE – Science & Mind – Psychology & Mental Health"
+
+  - name: "Candace Owens"
+    url: "https://www.youtube.com/@RealCandaceO/videos"
+    channel_id: "UCL0u5uz7KZ9q-pe-VC8TY-w"
+    playlist_prefix: "CO"
+    min_duration: 600         # 10 min — include show segments, not just shorts
+    max_age_days: 365
+    ml_confidence_threshold: 0.08
+
+    taxonomy:
+      - slug: politics_government
+        label: "Politics & Government"
+        children:
+          - slug: us_elections_politics
+            label: "US elections & domestic politics"
+          - slug: government_policy
+            label: "government policy & legislation"
+          - slug: censorship_free_speech
+            label: "censorship & free speech"
+          - slug: deep_state_establishment
+            label: "deep state & political establishment"
+
+      - slug: international_affairs
+        label: "International Affairs"
+        children:
+          - slug: france_europe
+            label: "France & Europe"        # Brigitte Macron episodes land here
+          - slug: africa_diaspora
+            label: "Africa & the diaspora"
+          - slug: global_geopolitics
+            label: "global geopolitics & wars"
+
+      - slug: media_culture
+        label: "Media & Culture"
+        children:
+          - slug: mainstream_media_criticism
+            label: "mainstream media criticism"
+          - slug: celebrity_controversy
+            label: "celebrity controversy & Hollywood"   # Blake Lively episodes land here
+          - slug: entertainment_news
+            label: "entertainment news & pop culture"
+
+      - slug: society_identity
+        label: "Society & Identity"
+        children:
+          - slug: race_identity
+            label: "race & identity politics"
+          - slug: gender_feminism
+            label: "gender & feminism"
+          - slug: family_values_religion
+            label: "family values & religion"
+          - slug: crime_public_safety
+            label: "crime & public safety"
+
+      - slug: economics_business
+        label: "Economics & Business"
+        children:
+          - slug: corporate_woke_agenda
+            label: "corporate woke agenda & ESG"
+          - slug: economy_inflation
+            label: "economy & inflation"
+
+      - slug: legal_institutional
+        label: "Legal & Institutional"
+        children:
+          - slug: lawsuits_courts
+            label: "lawsuits & courts"
+          - slug: big_tech_censorship
+            label: "big tech & platform censorship"
+
+    playlists:
+      france_europe:
+        title: "CO – International – France & Europe"
+      celebrity_controversy:
+        title: "CO – Media – Celebrity Controversy & Hollywood"
+      us_elections_politics:
+        title: "CO – Politics – US Elections & Domestic Politics"
+      censorship_free_speech:
+        title: "CO – Politics – Censorship & Free Speech"

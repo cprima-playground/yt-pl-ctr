@@ -1,8 +1,11 @@
 """Video metadata fetching — adapter pattern over yt-dlp or YouTube Data API."""
 
+import json
 import logging
 import os
+import re
 import time
+import urllib.request
 from collections.abc import Iterator
 from functools import wraps
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -15,7 +18,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def is_ci() -> bool:
+    """True on GitHub Actions (GITHUB_ACTIONS=true). yt-dlp is bot-blocked on CI IPs."""
+    return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
 # ── Protocol ─────────────────────────────────────────────────────────────────
+
 
 @runtime_checkable
 class VideoFetcherProtocol(Protocol):
@@ -44,16 +53,20 @@ def _ytdlp_retry(func):
                 return func(*args, **kwargs)
             except Exception as e:
                 if any(x in str(e).lower() for x in ["429", "rate", "too many", "temporarily"]):
-                    delay = min(_YTDLP_BASE_DELAY * (2 ** attempt), _YTDLP_MAX_DELAY)
+                    delay = min(_YTDLP_BASE_DELAY * (2**attempt), _YTDLP_MAX_DELAY)
                     logger.warning(
                         "yt-dlp error (attempt %d/%d), waiting %.1fs: %s",
-                        attempt + 1, _YTDLP_MAX_RETRIES, delay, str(e)[:100],
+                        attempt + 1,
+                        _YTDLP_MAX_RETRIES,
+                        delay,
+                        str(e)[:100],
                     )
                     time.sleep(delay)
                     last_error = e
                 else:
                     raise
         raise last_error
+
     return wrapper
 
 
@@ -140,6 +153,7 @@ class YtDlpFetcher:
 
 # ── YouTube Data API adapter ──────────────────────────────────────────────────
 
+
 class YouTubeAPIFetcher:
     """Fetches video metadata via YouTube Data API v3. No bot detection issues."""
 
@@ -154,33 +168,44 @@ class YouTubeAPIFetcher:
         channel_id = self._client.resolve_channel_id(url)
         uploads_playlist_id = self._client.get_uploads_playlist_id(channel_id)
 
-        # Page through the uploads playlist, skipping `offset` videos
+        # Page through the uploads playlist, skipping full pages for large offsets
         skipped = 0
         fetched = 0
         page_token: str | None = None
 
         while fetched < limit:
-            batch_size = min(50, limit - fetched + max(0, offset - skipped))
             video_ids, page_token = self._client.list_playlist_videos(
-                uploads_playlist_id, max_results=batch_size, page_token=page_token
+                uploads_playlist_id, max_results=50, page_token=page_token
             )
 
             if not video_ids:
                 break
 
+            # Apply offset by skipping whole pages when possible
+            if skipped + len(video_ids) <= offset:
+                skipped += len(video_ids)
+                if not page_token:
+                    break
+                continue
+
+            # Filter to IDs we actually want (after offset, up to limit)
+            ids_to_fetch = []
             for vid_id in video_ids:
                 if skipped < offset:
                     skipped += 1
                     continue
-                if fetched >= limit:
+                if fetched + len(ids_to_fetch) >= limit:
                     break
+                ids_to_fetch.append(vid_id)
 
-                videos = self._client.get_videos_metadata([vid_id])
-                if videos:
-                    yield videos[0]
+            # Batch fetch metadata — 1 API call for up to 50 videos
+            if ids_to_fetch:
+                batch = self._client.get_videos_metadata(ids_to_fetch)
+                for video in batch:
+                    yield video
                     fetched += 1
 
-            if not page_token:
+            if not page_token or fetched >= limit:
                 break
 
         logger.info("YouTubeAPI: fetched %d videos", fetched)
@@ -192,9 +217,8 @@ class YouTubeAPIFetcher:
 
 # ── Module-level shims (backward compat) ─────────────────────────────────────
 
-def fetch_channel_videos(
-    url: str, limit: int = 30, offset: int = 0
-) -> Iterator[VideoMetadata]:
+
+def fetch_channel_videos(url: str, limit: int = 30, offset: int = 0) -> Iterator[VideoMetadata]:
     """Backward-compat shim using YtDlpFetcher."""
     yield from YtDlpFetcher().fetch_channel_videos(url, limit=limit, offset=offset)
 
@@ -202,3 +226,132 @@ def fetch_channel_videos(
 def fetch_video_metadata(video_id: str) -> VideoMetadata | None:
     """Backward-compat shim using YtDlpFetcher."""
     return YtDlpFetcher().fetch_video_metadata(video_id)
+
+
+# ── Transcript fetching ───────────────────────────────────────────────────────
+
+_TRANSCRIPT_MAX_CHARS = 10000  # runtime classifier: fast, first ~13 min
+_TRANSCRIPT_CORPUS_MAX_CHARS = 30000  # corpus building: first ~40 min, past most intros
+_TRANSCRIPT_SKIP_SECONDS = 120  # skip first 2 min (intro music, credits)
+_TRANSCRIPT_LANGS = ("en", "en-US", "en-GB")
+
+
+def fetch_transcript(
+    video_id: str,
+    max_chars: int = _TRANSCRIPT_MAX_CHARS,
+    skip_seconds: int = _TRANSCRIPT_SKIP_SECONDS,
+) -> str | None:
+    """Fetch auto-generated transcript via yt-dlp. Returns None on any failure.
+
+    Skips immediately on CI (yt-dlp is bot-blocked on GitHub Actions IPs).
+    skip_seconds: drop captions from the first N seconds (intro music, sponsors).
+    max_chars: truncate result for runtime use; use _TRANSCRIPT_CORPUS_MAX_CHARS for training.
+    """
+    if is_ci():
+        logger.debug("Skipping transcript fetch on CI for %s", video_id)
+        return None
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        with _create_ydl(flat=False) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if not info:
+            return None
+
+        auto_caps: dict = info.get("automatic_captions") or {}
+        manual_caps: dict = info.get("subtitles") or {}
+
+        for lang in _TRANSCRIPT_LANGS:
+            formats = auto_caps.get(lang) or manual_caps.get(lang)
+            if not formats:
+                continue
+            for ext in ("json3", "vtt"):
+                fmt = next((f for f in formats if f.get("ext") == ext), None)
+                if fmt and fmt.get("url"):
+                    text = _fetch_caption_url(
+                        fmt["url"], ext, max_chars=max_chars, skip_seconds=skip_seconds
+                    )
+                    if text:
+                        logger.debug(
+                            "Transcript fetched for %s (%s %s, %d chars)",
+                            video_id,
+                            lang,
+                            ext,
+                            len(text),
+                        )
+                        return text
+
+        logger.debug("No transcript found for %s", video_id)
+        return None
+
+    except Exception as e:
+        logger.debug("Transcript fetch failed for %s: %s", video_id, str(e)[:120])
+        return None
+
+
+def _parse_vtt_timestamp(ts: str) -> float:
+    """Parse HH:MM:SS.mmm or MM:SS.mmm VTT timestamp to seconds."""
+    parts = ts.strip().split(":")
+    try:
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        return int(parts[0]) * 60 + float(parts[1])
+    except (ValueError, IndexError):
+        return 0.0
+
+
+def _fetch_caption_url(
+    url: str,
+    ext: str,
+    max_chars: int | None = _TRANSCRIPT_MAX_CHARS,
+    skip_seconds: int = _TRANSCRIPT_SKIP_SECONDS,
+) -> str | None:
+    last_err = None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                content = resp.read().decode("utf-8")
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                time.sleep(2**attempt)
+    else:
+        logger.debug("Caption URL fetch failed after 3 attempts: %s", last_err)
+        return None
+
+    skip_ms = skip_seconds * 1000
+
+    if ext == "json3":
+        data = json.loads(content)
+        parts = []
+        for event in data.get("events", []):
+            if event.get("tStartMs", 0) < skip_ms:
+                continue
+            for seg in event.get("segs", []):
+                text = seg.get("utf8", "").strip()
+                if text and text != "\n":
+                    parts.append(text)
+        text = " ".join(parts)
+    else:
+        # VTT: parse timestamps to apply skip_seconds
+        lines = []
+        skip_block = False
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("WEBVTT") or re.match(r"^\d+$", line):
+                continue
+            if "-->" in line:
+                start_ts = line.split("-->")[0].strip()
+                skip_block = _parse_vtt_timestamp(start_ts) < skip_seconds
+                continue
+            if not skip_block:
+                cleaned = re.sub(r"<[^>]+>", "", line)
+                if cleaned:
+                    lines.append(cleaned)
+        text = " ".join(lines)
+
+    text = " ".join(text.split())
+    if not text:
+        return None
+    return text[:max_chars] if max_chars is not None else text

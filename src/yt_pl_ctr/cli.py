@@ -1,26 +1,27 @@
 """Typer CLI for yt-pl-ctr."""
 
 import logging
+import os
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
-from dotenv import load_dotenv
 import typer
-
-# Load .env file if present
-load_dotenv()
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
 from . import __version__
 from .config import load_config
-from .fetcher import VideoFetcherProtocol, YtDlpFetcher, YouTubeAPIFetcher
-from .queue import VideoQueue
+from .fetcher import VideoFetcherProtocol, YouTubeAPIFetcher, YtDlpFetcher, is_ci
 from .fetcher_queue import fetch_to_queue
 from .processor import process_pending, watch_and_process
+from .queue import VideoQueue
 from .sync import classify_channel_videos, sync_all_channels
-from .youtube import YouTubeClient, YouTubeAPIError
+from .youtube import YouTubeAPIError, YouTubeClient
+
+# Load .env before any code that reads env vars
+load_dotenv()
 
 app = typer.Typer(
     name="yt-pl-ctr",
@@ -47,9 +48,28 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-def _build_fetcher(youtube: YouTubeClient | None) -> VideoFetcherProtocol:
-    """Select fetcher implementation: API if creds available, yt-dlp otherwise."""
-    if youtube is not None:
+def _build_fetcher(youtube: YouTubeClient | None, mode: str = "auto") -> VideoFetcherProtocol:
+    """Select fetcher implementation.
+
+    mode: 'auto', 'api' (force), 'ytdlp' (force).
+    CLI --fetcher flag > YT_FETCHER env var > auto logic.
+
+    Auto logic:
+      - GitHub Actions (GITHUB_ACTIONS=true): API fetcher — yt-dlp is bot-blocked on CI IPs
+      - Residential / local: yt-dlp — saves API quota, works fine on non-CI IPs
+    Playlist CRUD always uses the YouTube Data API regardless of fetcher choice.
+    """
+    resolved = mode if mode != "auto" else os.environ.get("YT_FETCHER", "auto")
+    if resolved == "ytdlp":
+        return YtDlpFetcher()
+    if resolved == "api":
+        if youtube is None:
+            raise YouTubeAPIError("YT_FETCHER=api but no YouTube credentials found")
+        return YouTubeAPIFetcher(youtube)
+    # auto: use environment signal to pick the right backend
+    if is_ci():
+        if youtube is None:
+            raise YouTubeAPIError("Running on GitHub Actions but no YouTube credentials found")
         return YouTubeAPIFetcher(youtube)
     return YtDlpFetcher()
 
@@ -57,7 +77,7 @@ def _build_fetcher(youtube: YouTubeClient | None) -> VideoFetcherProtocol:
 @app.callback()
 def main(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option("--version", "-V", callback=version_callback, is_eager=True),
     ] = None,
 ) -> None:
@@ -72,7 +92,7 @@ def sync(
         typer.Option("--config", "-c", help="Path to config file (YAML)"),
     ],
     limit: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--limit", "-l", help="Max videos per channel (overrides config)"),
     ] = None,
     dry_run: Annotated[
@@ -84,17 +104,22 @@ def sync(
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
     ] = False,
     channel: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option("--channel", help="Only sync specific channel URL(s)"),
     ] = None,
+    fetcher: Annotated[
+        str,
+        typer.Option(
+            "--fetcher", help="Fetcher backend: auto, api, ytdlp (overrides YT_FETCHER env var)"
+        ),
+    ] = "auto",
 ) -> None:
     """Sync videos from configured channels to categorized playlists."""
     setup_logging(verbose)
-    logger = logging.getLogger(__name__)
 
     if not config_path.exists():
         console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
 
     config = load_config(config_path)
     console.print(f"[blue]Loaded config with {len(config.channels)} channel(s)[/blue]")
@@ -105,16 +130,19 @@ def sync(
     try:
         youtube = YouTubeClient.from_env()
         channel_info = youtube.get_channel_info()
-        console.print(f"[green]Authenticated as: {channel_info.get('title')} ({channel_info.get('custom_url')})[/green]")
+        console.print(
+            f"[green]Authenticated as: {channel_info.get('title')} "
+            f"({channel_info.get('custom_url')})[/green]"
+        )
     except YouTubeAPIError as e:
         console.print(f"[red]Error: {e}[/red]")
-        console.print("[dim]Set YT_CLIENT_ID, YT_CLIENT_SECRET, and YT_REFRESH_TOKEN environment variables[/dim]")
-        raise typer.Exit(1)
+        console.print("[dim]Set YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN[/dim]")
+        raise typer.Exit(1)  # noqa: B904
 
     stats = sync_all_channels(
         config=config,
         youtube=youtube,
-        fetcher=_build_fetcher(youtube),
+        fetcher=_build_fetcher(youtube, mode=fetcher),
         limit=limit,
         dry_run=dry_run,
         channels=channel,
@@ -126,6 +154,7 @@ def sync(
     table.add_column("Channel", style="cyan")
     table.add_column("Processed", justify="right")
     table.add_column("Added", justify="right", style="green")
+    table.add_column("Reclassified", justify="right", style="blue")
     table.add_column("Skipped", justify="right", style="yellow")
     table.add_column("Errors", justify="right", style="red")
 
@@ -134,21 +163,52 @@ def sync(
             ch_stats.channel_url[:40],
             str(ch_stats.videos_processed),
             str(ch_stats.videos_added),
+            str(ch_stats.videos_reclassified),
             str(ch_stats.videos_skipped),
             str(ch_stats.errors),
         )
 
+    total_reclassified = sum(c.videos_reclassified for c in stats.channels)
     table.add_row(
         "[bold]Total[/bold]",
         f"[bold]{stats.total_processed}[/bold]",
         f"[bold]{stats.total_added}[/bold]",
+        f"[bold]{total_reclassified}[/bold]",
         f"[bold]{stats.total_skipped}[/bold]",
         f"[bold]{stats.total_errors}[/bold]",
     )
     console.print(table)
 
     if stats.total_errors > 0:
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
+
+
+def _print_classify_table(console: Console, clf, videos, channel_config) -> None:
+    table = Table()
+    table.add_column("Video Title", max_width=50)
+    table.add_column("Guest", max_width=20)
+    table.add_column("Category", style="cyan")
+    table.add_column("Skip", justify="center")
+    table.add_column("Match", style="dim")
+
+    categories: dict[str, int] = {}
+    for video in videos:
+        result = clf.classify(video)
+        guest = video.title.split(" - ")[-1][:20] if " - " in video.title else "-"
+        skip_mark = "[red]✗[/red]" if result.skipped else "[green]✓[/green]"
+        table.add_row(
+            video.title[:50],
+            guest,
+            result.category_name,
+            skip_mark,
+            f"{result.match_reason}: {result.matched_value or 'n/a'}"[:35],
+        )
+        categories[result.category_key] = categories.get(result.category_key, 0) + 1
+
+    console.print(table)
+    console.print("\n[dim]Category distribution:[/dim]")
+    for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
+        console.print(f"  {cat}: {count}")
 
 
 @app.command()
@@ -162,24 +222,63 @@ def classify(
         typer.Option("--limit", "-l", help="Max videos per channel"),
     ] = 10,
     channel_url: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--channel", help="Only classify specific channel URL"),
     ] = None,
+    video_ids: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--video-id",
+            "-v",
+            help="Classify specific video ID(s) instead of fetching from channel",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", help="Enable debug logging"),
+    ] = False,
 ) -> None:
     """Preview video classifications without syncing to playlists."""
-    setup_logging(False)
+    setup_logging(verbose)
 
     if not config_path.exists():
         console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
 
     config = load_config(config_path)
+
+    # When targeting specific video IDs, fetch their metadata via YouTube API
+    if video_ids:
+        try:
+            youtube = YouTubeClient.from_env()
+        except YouTubeAPIError as e:
+            console.print(f"[red]--video-id requires YouTube API credentials: {e}[/red]")
+            raise typer.Exit(1)  # noqa: B904
+
+        from .classifier import VideoClassifier
+
+        videos = youtube.get_videos_metadata(video_ids)
+        if not videos:
+            console.print("[red]No videos found for given IDs[/red]")
+            raise typer.Exit(1)  # noqa: B904
+
+        for channel_config in config.channels:
+            if channel_url and channel_config.url != channel_url:
+                continue
+            console.print(
+                f"\n[blue]Channel: {channel_config.playlist_prefix or channel_config.url}[/blue]"
+            )
+            clf = VideoClassifier(channel_config)
+            _print_classify_table(console, clf, videos, channel_config)
+        return
 
     for channel_config in config.channels:
         if channel_url and channel_config.url != channel_url:
             continue
 
-        console.print(f"\n[blue]Channel: {channel_config.playlist_prefix or channel_config.url}[/blue]")
+        console.print(
+            f"\n[blue]Channel: {channel_config.playlist_prefix or channel_config.url}[/blue]"
+        )
         console.print(f"[dim]URL: {channel_config.url}[/dim]")
 
         table = Table()
@@ -188,28 +287,12 @@ def classify(
         table.add_column("Category", style="cyan")
         table.add_column("Match", style="dim")
 
+        from .classifier import VideoClassifier
+
+        clf = VideoClassifier(channel_config)
         results = classify_channel_videos(channel_config, limit=limit, fetcher=_build_fetcher(None))
-
-        for r in results:
-            guest = r.video.title.split(" - ")[-1][:20] if " - " in r.video.title else "-"
-            table.add_row(
-                r.video.title[:50],
-                guest,
-                r.classification.category_name,
-                f"{r.classification.match_reason}: {r.classification.matched_value or 'n/a'}"[:30],
-            )
-
-        console.print(table)
-
-        # Category summary
-        categories: dict[str, int] = {}
-        for r in results:
-            key = r.classification.category_key
-            categories[key] = categories.get(key, 0) + 1
-
-        console.print("\n[dim]Category distribution:[/dim]")
-        for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
-            console.print(f"  {cat}: {count}")
+        videos = [r.video for r in results]
+        _print_classify_table(console, clf, videos, channel_config)
 
 
 @app.command()
@@ -222,21 +305,17 @@ def list_channels(
     """List configured channels and their categories."""
     if not config_path.exists():
         console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
 
     config = load_config(config_path)
 
     for channel in config.channels:
         console.print(f"\n[bold cyan]{channel.playlist_prefix or 'Channel'}[/bold cyan]")
         console.print(f"  URL: {channel.url}")
-        console.print(f"  Default category: {channel.default_category}")
-        console.print("  Categories:")
-        for key, cat in channel.categories.items():
-            console.print(f"    [green]{key}[/green]: {cat.name}")
-            if cat.guests:
-                console.print(f"      Guests: {len(cat.guests)}")
-            if cat.keywords:
-                console.print(f"      Keywords: {len(cat.keywords)}")
+        console.print(f"  Taxonomy leaf topics: {len(channel.all_leaf_slugs())}")
+        console.print(f"  Playlists ({len(channel.playlists)}):")
+        for slug, pl in channel.playlists.items():
+            console.print(f"    [green]{slug}[/green]: {pl.title}")
 
 
 @app.command()
@@ -250,7 +329,7 @@ def whoami() -> None:
         console.print(f"[green]ID:[/green] {info.get('id')}")
     except YouTubeAPIError as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
 
 
 # === Backfill commands (local, queue-based) ===
@@ -267,11 +346,11 @@ def fetch(
         typer.Option("--queue", "-q", help="Queue directory"),
     ] = Path("queue"),
     limit: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--limit", "-l", help="Max videos per channel"),
     ] = 50,
     offset: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--offset", "-o", help="Skip first N videos (overrides saved offset)"),
     ] = None,
     resume: Annotated[
@@ -290,15 +369,21 @@ def fetch(
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
     ] = False,
+    fetcher: Annotated[
+        str,
+        typer.Option(
+            "--fetcher", help="Fetcher backend: auto, api, ytdlp (overrides YT_FETCHER env var)"
+        ),
+    ] = "auto",
 ) -> None:
     """Fetch video metadata and add to queue (for backfilling)."""
-    from .fetcher_queue import load_state, save_state, get_channel_offset, STATE_FILE
+    from .fetcher_queue import STATE_FILE, get_channel_offset, load_state, save_state
 
     setup_logging(verbose)
 
     if not config_path.exists():
         console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
 
     config = load_config(config_path)
     queue = VideoQueue(queue_dir)
@@ -327,9 +412,13 @@ def fetch(
         youtube = None
 
     count = fetch_to_queue(
-        config, queue,
-        fetcher=_build_fetcher(youtube),
-        limit=limit, offset=offset, delay=delay, resume=resume,
+        config,
+        queue,
+        fetcher=_build_fetcher(youtube, mode=fetcher),
+        limit=limit,
+        offset=offset,
+        delay=delay,
+        resume=resume,
     )
 
     console.print(f"\n[green]Fetched {count} videos[/green]")
@@ -355,7 +444,7 @@ def process(
         typer.Option("--dry-run", "-n", help="Don't actually add to playlists"),
     ] = False,
     limit: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--limit", "-l", help="Max items to process (non-watch mode)"),
     ] = None,
     verbose: Annotated[
@@ -368,7 +457,7 @@ def process(
 
     if not config_path.exists():
         console.print(f"[red]Error: Config file not found: {config_path}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1)  # noqa: B904
 
     config = load_config(config_path)
     queue = VideoQueue(queue_dir)
@@ -387,7 +476,7 @@ def process(
             console.print(f"[green]YouTube: {info.get('title')}[/green]")
         except YouTubeAPIError as e:
             console.print(f"[red]Error: {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1)  # noqa: B904
 
     if watch:
         console.print("[cyan]Watch mode - press Ctrl+C to stop[/cyan]")
@@ -396,7 +485,9 @@ def process(
         processed, succeeded, failed = process_pending(
             config, queue, youtube, dry_run=dry_run, limit=limit
         )
-        console.print(f"\n[green]Processed: {processed}, Succeeded: {succeeded}, Failed: {failed}[/green]")
+        console.print(
+            f"\n[green]Processed: {processed}, Succeeded: {succeeded}, Failed: {failed}[/green]"
+        )
 
 
 @app.command()

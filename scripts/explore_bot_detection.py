@@ -45,7 +45,9 @@ def probe_video(name: str, extra_args: list[str]) -> ProbeResult:
     print(f"\n[{name}]")
     t0 = time.time()
     ok, stdout, stderr = run_ydlp(
-        "--skip-download", "--dump-json", "--no-warnings",
+        "--skip-download",
+        "--dump-json",
+        "--no-warnings",
         *extra_args,
         f"https://www.youtube.com/watch?v={TEST_VIDEO_ID}",
     )
@@ -70,7 +72,9 @@ def probe_flat_channel(name: str, extra_args: list[str], limit: int = 5) -> Prob
     print(f"\n[{name} - flat channel]")
     t0 = time.time()
     ok, stdout, stderr = run_ydlp(
-        "--flat-playlist", "--dump-json", "--no-warnings",
+        "--flat-playlist",
+        "--dump-json",
+        "--no-warnings",
         f"--playlist-end={limit}",
         *extra_args,
         TEST_CHANNEL_URL,
@@ -82,7 +86,7 @@ def probe_flat_channel(name: str, extra_args: list[str], limit: int = 5) -> Prob
         print(f"  FAIL: {err[:120]}")
         return ProbeResult(name=name, success=False, error=err, duration_ms=elapsed)
 
-    count = len([l for l in stdout.strip().splitlines() if l])
+    count = len([ln for ln in stdout.strip().splitlines() if ln])
     print(f"  OK: got {count} entries")
     return ProbeResult(name=name, success=True, title=f"{count} entries", duration_ms=elapsed)
 
@@ -124,7 +128,9 @@ def main():
     print("\n" + "=" * 60)
     print("Probe 2: With --extractor-retries 1 --sleep-requests 2")
     print("=" * 60)
-    results.append(probe_video("sleep+retry", ["--extractor-retries", "1", "--sleep-requests", "2"]))
+    results.append(
+        probe_video("sleep+retry", ["--extractor-retries", "1", "--sleep-requests", "2"])
+    )
 
     print("\n" + "=" * 60)
     print("Probe 3: With --user-agent (Chrome UA)")
@@ -149,7 +155,9 @@ def main():
         results.append(probe_video("cookies-file", ["--cookies", cookies_file]))
     else:
         print("  SKIP: YT_COOKIES_FILE not set or file not found")
-        print("  To export cookies: yt-dlp --cookies-from-browser firefox --cookies cookies.txt <url>")
+        print(
+            "  To export cookies: yt-dlp --cookies-from-browser firefox --cookies cookies.txt <url>"
+        )
 
     print("\n" + "=" * 60)
     print("Probe 6: PO token (requires yt-dlp >= 2024.11)")
@@ -157,9 +165,15 @@ def main():
     po_token = os.environ.get("YT_PO_TOKEN")
     visitor_data = os.environ.get("YT_VISITOR_DATA")
     if po_token and visitor_data:
-        results.append(probe_video("po-token", [
-            "--extractor-args", f"youtube:po_token=web+{po_token};visitor_data={visitor_data}"
-        ]))
+        results.append(
+            probe_video(
+                "po-token",
+                [
+                    "--extractor-args",
+                    f"youtube:po_token=web+{po_token};visitor_data={visitor_data}",
+                ],
+            )
+        )
     else:
         print("  SKIP: YT_PO_TOKEN / YT_VISITOR_DATA not set")
         print("  See: https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide")
@@ -181,7 +195,9 @@ def main():
         print("  3. No cookies/PO token provided")
         print("\nNext steps to try:")
         print("  - Update yt-dlp: change >=2025.12.8 to >=2026.3.17 in pyproject.toml")
-        print("  - Export cookies: yt-dlp --cookies-from-browser firefox --cookies cookies.txt <url>")
+        print(
+            "  - Export cookies: yt-dlp --cookies-from-browser firefox --cookies cookies.txt <url>"
+        )
         print("  - Add cookies.txt as GitHub secret and pass via YT_COOKIES_FILE")
         print("  - Consider YouTube Data API v3 (no bot detection, uses OAuth)")
 

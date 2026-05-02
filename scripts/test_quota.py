@@ -8,9 +8,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from src.yt_pl_ctr.youtube import YouTubeClient, YouTubeAPIError
+from src.yt_pl_ctr.youtube import YouTubeAPIError, YouTubeClient
 
 try:
     yt = YouTubeClient.from_env()
@@ -27,7 +28,7 @@ try:
 
 except YouTubeAPIError as e:
     if "429" in str(e) or "rate" in str(e).lower():
-        print(f"RATE LIMITED - Write operations blocked")
+        print("RATE LIMITED - Write operations blocked")
         sys.exit(1)
     else:
         print(f"ERROR: {e}")

@@ -2,14 +2,20 @@
 
 __version__ = "0.1.0"
 
-from .config import load_config
-from .models import Category, ChannelConfig, Config, PlaylistSettings, VideoMetadata
 from .classifier import ClassificationResult, VideoClassifier
-from .fetcher import fetch_channel_videos, fetch_video_metadata, VideoFetcherProtocol, YtDlpFetcher, YouTubeAPIFetcher
-from .youtube import YouTubeClient, YouTubeAPIError
+from .config import load_config
+from .fetcher import (
+    VideoFetcherProtocol,
+    YouTubeAPIFetcher,
+    YtDlpFetcher,
+    fetch_channel_videos,
+    fetch_video_metadata,
+)
+from .models import ChannelConfig, Config, PlaylistSettings, TaxonomyNode, VideoMetadata
+from .queue import QueueItem, VideoQueue
 from .sync import classify_channel_videos, sync_all_channels, sync_channel
-from .wikipedia import WikipediaInfo, lookup_person, get_primary_topic
-from .queue import VideoQueue, QueueItem
+from .wikipedia import WikipediaInfo, get_primary_topic, lookup_person
+from .youtube import YouTubeAPIError, YouTubeClient
 
 __all__ = [
     "__version__",
@@ -17,7 +23,7 @@ __all__ = [
     "load_config",
     "Config",
     "ChannelConfig",
-    "Category",
+    "TaxonomyNode",
     "PlaylistSettings",
     # Models
     "VideoMetadata",

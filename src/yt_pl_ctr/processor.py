@@ -5,9 +5,9 @@ from pathlib import Path
 
 from .classifier import VideoClassifier
 from .config import load_config
-from .models import Config, ChannelConfig
-from .queue import VideoQueue, QueueItem
-from .youtube import YouTubeClient, YouTubeAPIError
+from .models import ChannelConfig, Config
+from .queue import QueueItem, VideoQueue
+from .youtube import YouTubeAPIError, YouTubeClient
 
 logger = logging.getLogger(__name__)
 

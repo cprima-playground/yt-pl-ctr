@@ -27,104 +27,45 @@ class WikipediaInfo:
     topics: list[str] = field(default_factory=list)
 
 
-# Topic detection patterns - maps Wikipedia category/summary keywords to our topics
+# Topic detection patterns - maps Wikipedia category/summary keywords to our topics.
+# Only map to categories that actually exist in channels.yaml.
+# Broad terms like "historian", "actor", "doctor" are intentionally excluded
+# to avoid false positives from Wikipedia disambiguation to wrong people.
 TOPIC_PATTERNS: dict[str, list[str]] = {
-    "science_tech": [
-        r"scientist",
-        r"physicist",
-        r"biologist",
-        r"neuroscientist",
-        r"astronomer",
-        r"engineer",
-        r"computer science",
-        r"artificial intelligence",
-        r"technology",
-        r"professor",
-        r"researcher",
-        r"PhD",
-        r"inventor",
-        r"mathematician",
-        r"chemist",
-        r"physician",
-        r"doctor",
-        r"medical",
-        r"NASA",
-        r"SpaceX",
-        r"entrepreneur.*tech",
-    ],
-    "ufo_aliens": [
+    "ufo_extraterrestrial": [
         r"ufolog",
-        r"UFO",
+        r"UFO researcher",
         r"UAP",
         r"extraterrestrial",
-        r"alien",
-        r"paranormal investigator",
+        r"paranormal investigator.*UFO",
         r"Area 51",
+        r"disclosure.*alien",
     ],
-    "politics": [
-        r"politician",
-        r"senator",
-        r"congressman",
-        r"representative",
-        r"governor",
-        r"mayor",
-        r"political",
-        r"commentator",
-        r"activist",
-        r"journalist.*political",
-        r"pundit",
-        r"conservative",
-        r"liberal",
-        r"republican",
-        r"democrat",
-    ],
-    "comedy": [
-        r"comedian",
-        r"stand-up",
-        r"comedy",
-        r"actor",
-        r"actress",
-        r"entertainer",
-        r"television host",
-        r"TV host",
-        r"talk show",
-        r"film director",
-        r"screenwriter",
-        r"musician",
-        r"singer",
-        r"rapper",
-        r"podcaster",
-    ],
-    "mma_martial_arts": [
-        r"martial artist",
-        r"mixed martial arts",
-        r"MMA",
-        r"UFC",
-        r"boxer",
-        r"wrestler",
-        r"Brazilian jiu-jitsu",
-        r"jiu-jitsu",
-        r"kickboxer",
-        r"fighter",
-        r"champion.*fighting",
-        r"Bellator",
-        r"athlete",
-        r"bowhunter",
-        r"hunter",
-        r"Navy SEAL",
-        r"military",
-        r"Special Forces",
+    "paranormal_cryptozoology": [
+        r"cryptozoolog",
+        r"Bigfoot",
+        r"Sasquatch",
+        r"paranormal investigator",
+        r"ghost hunter",
+        r"cryptid",
     ],
     "ancient_history": [
         r"archaeolog",
-        r"ancient",
-        r"historian",
-        r"anthropolog",
         r"egyptolog",
         r"alternative history",
         r"pseudoarchaeolog",
-        r"civilization",
+        r"ancient civilization",
         r"geolog.*alternative",
+        r"alternative archaeolog",
+    ],
+    "psychology": [
+        r"psychologist",
+        r"psychiatrist",
+        r"neuroscientist",
+        r"therapist",
+        r"mental health",
+        r"cognitive scientist",
+        r"behavioral scientist",
     ],
 }
 
@@ -188,7 +129,7 @@ def lookup_person(name: str) -> WikipediaInfo:
         # Get categories (filter out maintenance categories)
         categories = [
             cat.replace("Category:", "")
-            for cat in page.categories.keys()
+            for cat in page.categories
             if not any(
                 x in cat.lower()
                 for x in ["stub", "articles", "pages", "wikidata", "short description"]

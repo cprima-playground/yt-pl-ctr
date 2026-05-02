@@ -1,110 +1,157 @@
 #!/usr/bin/env python3
-"""Download video metadata for testing the classifier (metadata only, no video files).
+"""Fetch video metadata for any configured channel via YouTube Data API.
 
-Two-step process:
-1. Fast: Get video IDs with --flat-playlist
-2. Slow: Fetch full metadata for each video (includes complete descriptions)
+Writes to a structured cache directory (default: $YT_CACHE_DIR):
+  index.json              — lightweight episode list
+  episodes/{id}/
+    metadata.json         — full VideoMetadata
+
+Incremental and idempotent — safe to interrupt and resume.
+
+Usage:
+    # Fetch metadata for default (first) channel
+    uv run python scripts/download_test_data.py --limit 2500
+
+    # Fetch metadata for a specific channel (applies max_age_days from config)
+    uv run python scripts/download_test_data.py --channel "Candace Owens"
+
+    # Then fetch transcripts
+    uv run python scripts/fetch_transcripts.py --channel "Candace Owens"
 """
 
-import json
-import subprocess
+import argparse
+import os
 import sys
-import time
 from pathlib import Path
 
-CHANNEL_URL = "https://www.youtube.com/@joerogan/videos"
-OUTPUT_DIR = Path(__file__).parent.parent / "tests" / "fixtures"
-OUTPUT_FILE = OUTPUT_DIR / "jre_videos.json"
-LIMIT = 100
-DELAY_SECONDS = 1  # Delay between individual video fetches
+import yaml
+from dotenv import load_dotenv
+
+load_dotenv()
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import cache as cache_mod
+from yt_pl_ctr.fetcher import YouTubeAPIFetcher
+from yt_pl_ctr.models import Config
+from yt_pl_ctr.youtube import YouTubeAPIError, YouTubeClient
 
 
-def get_video_ids(channel_url: str, limit: int) -> list[str]:
-    """Fast extraction of video IDs using flat-playlist mode."""
-    print(f"Step 1: Getting video IDs (fast)...")
-    result = subprocess.run(
-        [
-            "yt-dlp",
-            "--flat-playlist",
-            "--dump-json",
-            f"--playlist-end={limit}",
-            channel_url,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        print(f"Error: {result.stderr}", file=sys.stderr)
-        return []
-
-    video_ids = []
-    for line in result.stdout.strip().split("\n"):
-        if line:
-            data = json.loads(line)
-            video_ids.append(data.get("id"))
-    return video_ids
+def _default_cache_dir() -> Path:
+    env = os.environ.get("YT_CACHE_DIR")
+    return Path(env) if env else Path(__file__).parent.parent / "cache"
 
 
-def get_full_metadata(video_id: str) -> dict | None:
-    """Fetch full metadata for a single video (includes complete description)."""
-    result = subprocess.run(
-        [
-            "yt-dlp",
-            "--skip-download",
-            "--dump-json",
-            f"https://www.youtube.com/watch?v={video_id}",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return None
-
-    data = json.loads(result.stdout)
-    return {
-        "video_id": data.get("id"),
-        "title": data.get("title"),
-        "description": data.get("description", ""),
-        "duration": data.get("duration"),
-        "view_count": data.get("view_count"),
-    }
+def _default_config() -> Path:
+    return Path(__file__).parent.parent / "configs" / "channels.yaml"
 
 
 def main():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser(
+        description="Fetch channel video metadata into structured cache"
+    )
+    parser.add_argument("--cache-dir", type=Path, default=None)
+    parser.add_argument("--config", type=Path, default=None)
+    parser.add_argument(
+        "--channel", default=None,
+        help="Channel name from config (default: first channel)",
+    )
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Max videos to fetch (default: all within age window)")
+    parser.add_argument("--offset", type=int, default=0, help="Skip first N videos in listing")
+    args = parser.parse_args()
 
-    print(f"Fetching metadata for {LIMIT} videos from {CHANNEL_URL}...")
+    config_path = args.config or _default_config()
+    with open(config_path) as f:
+        config = Config.model_validate(yaml.safe_load(f))
 
-    # Step 1: Get video IDs quickly
-    video_ids = get_video_ids(CHANNEL_URL, LIMIT)
-    if not video_ids:
-        print("Failed to get video IDs")
+    if args.channel:
+        matches = [c for c in config.channels if c.name.lower() == args.channel.lower()]
+        if not matches:
+            names = [c.name for c in config.channels]
+            print(f"Channel {args.channel!r} not found. Available: {names}", file=sys.stderr)
+            return 1
+        channel_config = matches[0]
+    else:
+        channel_config = config.channels[0]
+
+    cutoff = channel_config.min_upload_date_str()
+    limit = args.limit or 5000  # generous cap; age filter stops early anyway
+
+    print(f"Channel : {channel_config.name}")
+    print(f"URL     : {channel_config.url}")
+    print(f"Cutoff  : {cutoff or 'none'}")
+    print(f"Limit   : {limit}")
+
+    cache_dir = args.cache_dir or _default_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Cache   : {cache_dir}")
+    print()
+
+    try:
+        youtube = YouTubeClient.from_env()
+        info = youtube.get_channel_info()
+        print(f"Authenticated as: {info.get('title')}")
+    except YouTubeAPIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print("Set YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN in .env", file=sys.stderr)
         return 1
 
-    print(f"Found {len(video_ids)} videos")
+    fetcher = YouTubeAPIFetcher(youtube)
 
-    # Step 2: Fetch full metadata for each video
-    print(f"Step 2: Fetching full metadata ({DELAY_SECONDS}s delay between requests)...")
-    videos = []
-    for i, video_id in enumerate(video_ids, 1):
-        print(f"  [{i}/{len(video_ids)}] {video_id}", end=" ", flush=True)
-        metadata = get_full_metadata(video_id)
-        if metadata:
-            videos.append(metadata)
-            print(f"- {metadata['title'][:50]}...")
-        else:
-            print("- FAILED")
+    existing_ids = cache_mod.known_ids(cache_dir)
+    index = cache_mod.read_index(cache_dir)
+    index_by_id = {e["video_id"]: e for e in index}
+    print(f"Already cached: {len(existing_ids)} episodes total")
+    print("Fetching... (writes incrementally, safe to interrupt)")
+    print()
 
-        if i < len(video_ids):
-            time.sleep(DELAY_SECONDS)
+    new_count = 0
+    stopped_at_cutoff = False
+    try:
+        for i, video in enumerate(
+            fetcher.fetch_channel_videos(channel_config.url, limit=limit, offset=args.offset), 1
+        ):
+            # Videos arrive newest-first; stop when we exceed the age window
+            if cutoff and video.upload_date and video.upload_date < cutoff:
+                print(f"  [{i}] Reached age cutoff ({video.upload_date} < {cutoff}) — stopping")
+                stopped_at_cutoff = True
+                break
 
-    # Save to JSON
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(videos, f, indent=2)
+            if video.video_id in existing_ids:
+                print(f"  [{i}] SKIP {video.video_id} (already cached)")
+                continue
 
-    print(f"\nSaved {len(videos)} videos to {OUTPUT_FILE}")
+            entry = {
+                "video_id": video.video_id,
+                "title": video.title,
+                "description": video.description,
+                "duration": video.duration,
+                "upload_date": video.upload_date,
+                "view_count": video.view_count,
+                "channel_name": video.channel_name,
+                "channel_id": video.channel_id,
+                "tags": video.tags,
+            }
+
+            cache_mod.write_metadata(cache_dir, entry)
+            index_by_id[video.video_id] = cache_mod.index_entry(entry)
+            existing_ids.add(video.video_id)
+            new_count += 1
+            print(f"  [{i}] {video.title[:70]}", flush=True)
+
+            if new_count % 10 == 0:
+                cache_mod.write_index(cache_dir, list(index_by_id.values()))
+
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+
+    cache_mod.write_index(cache_dir, list(index_by_id.values()))
+    print(f"\nDone. New: {new_count}, Total in cache: {len(index_by_id)}")
+    if cutoff and not stopped_at_cutoff:
+        print(f"Note: age cutoff ({cutoff}) was not reached — all fetched videos are within window")
     return 0
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

@@ -28,7 +28,9 @@ def fetch_video_metadata(yt_dlp_cmd: str) -> tuple[bool, str]:
     """Fetch metadata for the test video. Returns (success, title_or_error)."""
     result = subprocess.run(
         [yt_dlp_cmd, "--skip-download", "--dump-json", "--no-warnings", TEST_VIDEO_URL],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     if result.returncode != 0:
         err = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "failed"
@@ -73,7 +75,8 @@ def main():
 
         install = subprocess.run(
             [pip, "install", "--quiet", "yt-dlp"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if install.returncode != 0:
             print(f"  install failed: {install.stderr[:200]}")
