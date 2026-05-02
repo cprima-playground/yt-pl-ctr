@@ -82,14 +82,23 @@ def _build_document(title: str, description: str, transcript: str, no_transcript
     return " ".join(p.strip() for p in parts if p.strip())
 
 
-# Spoken-language fillers not covered by sklearn's English stop list
+# Spoken-language fillers not covered by sklearn's English stop list.
+# Includes apostrophe-stripped contractions from auto-generated transcripts
+# (e.g. "that's" → "thats", "don't" → "dont").
 _TRANSCRIPT_FILLERS = frozenset([
+    # hesitation / filler
     "uh", "um", "yeah", "okay", "ok", "right", "gonna", "wanna", "gotta",
     "let", "just", "really", "actually", "basically", "literally",
     "kind", "sort", "thing", "things", "way", "lot",
     "think", "said", "say", "says", "saying", "mean", "means",
     "look", "looks", "come", "coming", "goes", "going", "getting",
     "want", "wanted", "see", "saw", "know", "like",
+    # apostrophe-stripped contractions (auto-transcript artefacts)
+    "thats", "dont", "doesnt", "didnt", "wont", "cant", "wouldnt",
+    "shouldnt", "couldnt", "isnt", "wasnt", "arent", "werent",
+    "havent", "hasnt", "hadnt", "theyre", "youre", "youve", "youd", "youll",
+    "im", "ive", "id", "ill", "theres", "whats", "whos", "hes", "shes",
+    "theyd", "theyll", "theyve", "weve", "wed", "itll", "itd",
 ])
 
 
