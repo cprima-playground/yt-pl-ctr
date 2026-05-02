@@ -84,6 +84,17 @@ def _build_document(title: str, description: str, transcript: str, no_transcript
     return " ".join(p.strip() for p in parts if p.strip())
 
 
+# Spoken-language fillers not covered by sklearn's English stop list
+_TRANSCRIPT_FILLERS = frozenset([
+    "uh", "um", "yeah", "okay", "ok", "right", "gonna", "wanna", "gotta",
+    "let", "just", "really", "actually", "basically", "literally",
+    "kind", "sort", "thing", "things", "way", "lot",
+    "think", "said", "say", "says", "saying", "mean", "means",
+    "look", "looks", "come", "coming", "goes", "going", "getting",
+    "want", "wanted", "see", "saw", "know", "like",
+])
+
+
 # ── Engine: sklearn TF-IDF + NMF ──────────────────────────────────────────────
 
 def _run_nmf(
@@ -93,15 +104,16 @@ def _run_nmf(
     min_topic_size: int,
 ) -> list[dict]:
     print(f"[2/3] Fitting TF-IDF + NMF ({nr_topics} topics) ...", flush=True)
-    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
     from sklearn.decomposition import NMF
 
+    stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
     vectorizer = TfidfVectorizer(
-        max_df=0.85,
+        max_df=0.70,
         min_df=max(2, min_topic_size // 2),
         max_features=5000,
         ngram_range=(1, 2),
-        stop_words="english",
+        stop_words=stop_words,
     )
     tfidf = vectorizer.fit_transform(documents)
     print(f"  Vocabulary: {len(vectorizer.get_feature_names_out())} terms", flush=True)
