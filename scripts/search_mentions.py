@@ -242,7 +242,7 @@ def save_plan(matches: list[MentionMatch], cache_dir: Path) -> Path:
         "count": len(matches),
         "matches": [asdict(m) for m in matches],
     }
-    plan_file.write_text(json.dumps(data, indent=2, ensure_ascii=False, encoding="utf-8"))
+    plan_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return plan_file
 
 

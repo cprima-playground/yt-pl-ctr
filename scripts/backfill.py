@@ -382,7 +382,7 @@ def save_plan(planned: list[PlannedAction], cache_dir: Path) -> Path:
         "count": len(planned),
         "actions": [asdict(a) for a in planned],
     }
-    plan_file.write_text(json.dumps(data, indent=2, ensure_ascii=False, encoding="utf-8"))
+    plan_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return plan_file
 
 

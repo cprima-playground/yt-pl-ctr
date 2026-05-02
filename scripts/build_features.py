@@ -889,7 +889,7 @@ def main():
         result["video_id"] = vid
 
         feat_path = cache_mod.episode_dir(cache_dir, vid) / "features.json"
-        feat_path.write_text(json.dumps(result, indent=2, ensure_ascii=False, encoding="utf-8"))
+        feat_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
         done += 1
 
         if i % 50 == 0 or i == len(targets):
