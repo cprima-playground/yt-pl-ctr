@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
-"""Unsupervised topic discovery — TF-IDF + NMF (default) or BERTopic (--engine bertopic).
+"""Unsupervised topic discovery — three engines, all sklearn-compatible.
 
-Default engine uses only scikit-learn (already installed, no extra deps):
-  TF-IDF vectorisation → NMF decomposition → top keywords per topic
+Engines (--engine):
+  nmf       TF-IDF → NMF  — fast, deterministic, sharp keywords  [default]
+  lda       Count  → LDA  — probabilistic, softer topic boundaries
+  bertopic  sentence-transformers → PCA/UMAP → HDBSCAN → c-TF-IDF
+            Requires: uv sync --extra topic-discovery
 
-BERTopic engine (richer but requires heavy native extensions that may SIGBUS on WSL2):
-  sentence-transformers embeddings → PCA/UMAP → HDBSCAN → c-TF-IDF
-  Requires: uv sync --extra topic-discovery
+nmf and lda use only scikit-learn (already installed, no extra deps).
+BERTopic uses fast-hdbscan (Cython, no numba) to avoid SIGBUS on WSL2.
 
 No seed taxonomy required. Use the output to define the taxonomy in
 configs/channels.yaml, then run llm_label.py.
 
 Usage:
-    # Default (sklearn TF-IDF + NMF, works everywhere):
     uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies"
-
-    # Control topic count:
-    uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --nr-topics 20
-
-    # BERTopic engine (requires extra deps):
+    uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --engine lda
     uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --engine bertopic
+    uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --nr-topics 20
 """
 
 import argparse
@@ -134,6 +132,64 @@ def _run_nmf(
         if len(doc_indices) < min_topic_size:
             continue
         # sort by topic weight descending for representative titles
+        doc_indices_sorted = sorted(doc_indices, key=lambda i: W[i, tid], reverse=True)
+        topics.append({
+            "topic_id": tid,
+            "count": len(doc_indices),
+            "keywords": keywords,
+            "representative_titles": [titles[i] for i in doc_indices_sorted[:5]],
+            "doc_indices": doc_indices,
+        })
+
+    topics.sort(key=lambda t: t["count"], reverse=True)
+    return topics
+
+
+# ── Engine: sklearn LDA ───────────────────────────────────────────────────────
+
+def _run_lda(
+    documents: list[str],
+    titles: list[str],
+    nr_topics: int,
+    min_topic_size: int,
+) -> list[dict]:
+    print(f"[2/3] Fitting Count + LDA ({nr_topics} topics) ...", flush=True)
+    from sklearn.feature_extraction.text import CountVectorizer, ENGLISH_STOP_WORDS
+    from sklearn.decomposition import LatentDirichletAllocation
+
+    stop_words = list(ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS)
+    # LDA requires raw term counts (not TF-IDF weights)
+    vectorizer = CountVectorizer(
+        max_df=0.70,
+        min_df=max(2, min_topic_size // 2),
+        max_features=5000,
+        ngram_range=(1, 2),
+        stop_words=stop_words,
+    )
+    tf = vectorizer.fit_transform(documents)
+    print(f"  Vocabulary: {len(vectorizer.get_feature_names_out())} terms", flush=True)
+
+    model = LatentDirichletAllocation(
+        n_components=nr_topics,
+        random_state=42,
+        max_iter=20,
+        learning_method="online",
+        n_jobs=-1,
+    )
+    W = model.fit_transform(tf)  # doc-topic matrix
+    H = model.components_         # topic-term matrix
+    print("  Done.", flush=True)
+
+    terms = vectorizer.get_feature_names_out()
+    topic_assignments = W.argmax(axis=1)
+
+    topics = []
+    for tid in range(nr_topics):
+        top_idx = H[tid].argsort()[::-1][:10]
+        keywords = [terms[i] for i in top_idx]
+        doc_indices = [i for i, t in enumerate(topic_assignments) if t == tid]
+        if len(doc_indices) < min_topic_size:
+            continue
         doc_indices_sorted = sorted(doc_indices, key=lambda i: W[i, tid], reverse=True)
         topics.append({
             "topic_id": tid,
@@ -264,8 +320,8 @@ def main() -> int:
     parser.add_argument("--no-transcripts", action="store_true",
                         help="Use only title + description")
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--engine", choices=["nmf", "bertopic"], default="nmf",
-                        help="nmf = TF-IDF+NMF, no extra deps (default); bertopic = BERTopic")
+    parser.add_argument("--engine", choices=["nmf", "lda", "bertopic"], default="nmf",
+                        help="nmf = TF-IDF+NMF (default); lda = LDA; bertopic = BERTopic")
     parser.add_argument("--embedding-model", default="all-MiniLM-L6-v2",
                         help="[bertopic only] sentence-transformers model")
     parser.add_argument("--dim-reduction", choices=["pca", "umap"], default="pca",
@@ -276,7 +332,7 @@ def main() -> int:
     config = _load_config(args.config)
     channel = _select_channel(config, args.channel)
 
-    transcript_limit = None if args.engine == "nmf" else _TRANSCRIPT_CHARS_BERTOPIC
+    transcript_limit = None if args.engine in ("nmf", "lda") else _TRANSCRIPT_CHARS_BERTOPIC
     transcript_desc = "no" if args.no_transcripts else ("full" if not transcript_limit else f"first {transcript_limit} chars")
 
     print(f"Channel    : {channel.name}")
@@ -348,6 +404,8 @@ def main() -> int:
     # Run chosen engine
     if args.engine == "nmf":
         topics = _run_nmf(documents, titles, args.nr_topics, args.min_topic_size)
+    elif args.engine == "lda":
+        topics = _run_lda(documents, titles, args.nr_topics, args.min_topic_size)
     else:
         topics, _ = _run_bertopic(
             documents, titles, video_ids, cache_dir, channel.slug,
