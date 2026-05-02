@@ -394,9 +394,13 @@ def main() -> int:
     else:
         transcript_desc = "full"
 
-    extra_stopwords = frozenset(
-        w.strip().lower() for w in args.extra_stopwords.split(",") if w.strip()
-    )
+    _raw_extra = [w.strip().lower() for w in args.extra_stopwords.split(",") if w.strip()]
+    if _raw_extra:
+        # Lemmatize so "russians" → "russian" matches the same form used in the vectorizer
+        _lem_tok = _make_lemma_tokenizer()
+        extra_stopwords = frozenset(t for w in _raw_extra for t in (_lem_tok(w) or [w]))
+    else:
+        extra_stopwords = frozenset()
 
     print(f"Channel    : {channel.name}")
     print(f"Engine     : {args.engine}")
