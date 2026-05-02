@@ -100,6 +100,22 @@ discover-topics:
 discover-topics-other:
     uv run python scripts/discover_topics.py --only-other
 
+# ── Keyword mention search (no ML required) ───────────────────────────────────
+
+# Preview keyword matches for a channel (no API writes)
+# Usage: just mentions "Candace Owens"
+mentions CHANNEL:
+    uv run python scripts/search_mentions.py --channel "{{ CHANNEL }}"
+
+# Save keyword plan for review
+# Usage: just mentions-plan "Candace Owens"
+mentions-plan CHANNEL:
+    uv run python scripts/search_mentions.py --channel "{{ CHANNEL }}" --save-plan
+
+# Execute saved keyword plan against YouTube API
+mentions-execute-plan:
+    uv run python scripts/search_mentions.py --execute-plan
+
 # ── Code quality ──────────────────────────────────────────────────────────────
 
 # Run linter

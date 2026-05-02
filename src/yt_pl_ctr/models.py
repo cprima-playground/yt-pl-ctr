@@ -47,6 +47,16 @@ class PlaylistConfig(BaseModel):
     title: str = Field(..., description="Exact YouTube playlist title")
 
 
+class KeywordPlaylistConfig(BaseModel):
+    """A playlist populated by keyword/entity matching rather than ML classification."""
+
+    title: str = Field(..., description="Exact YouTube playlist title")
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Case-insensitive terms; a video matches if any term appears in title, description, or transcript.",
+    )
+
+
 class ChannelConfig(BaseModel):
     """Configuration for a single YouTube channel."""
 
@@ -71,7 +81,11 @@ class ChannelConfig(BaseModel):
     taxonomy: list[TaxonomyNode] = Field(default_factory=list)
     playlists: dict[str, PlaylistConfig] = Field(
         default_factory=dict,
-        description="Leaf slugs that become YouTube playlists",
+        description="Leaf slugs → ML-classified YouTube playlists",
+    )
+    keyword_playlists: dict[str, KeywordPlaylistConfig] = Field(
+        default_factory=dict,
+        description="Slug → keyword-matched YouTube playlists (entity/mention-based)",
     )
 
     @property

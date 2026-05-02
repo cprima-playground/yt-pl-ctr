@@ -199,12 +199,26 @@ channels:
           - slug: big_tech_censorship
             label: "big tech & platform censorship"
 
+    # ML-based playlists (primary topic classification, requires trained model)
     playlists:
-      france_europe:
-        title: "CO – International – France & Europe"
-      celebrity_controversy:
-        title: "CO – Media – Celebrity Controversy & Hollywood"
       us_elections_politics:
         title: "CO – Politics – US Elections & Domestic Politics"
       censorship_free_speech:
         title: "CO – Politics – Censorship & Free Speech"
+
+    # Keyword-based playlists (entity/mention matching — no ML model required)
+    keyword_playlists:
+      france_europe:
+        title: "CO – International – France & Europe"
+        keywords:
+          - "Brigitte Macron"
+          - "Emmanuel Macron"
+          - "Macron"
+          - "France"
+      celebrity_controversy:
+        title: "CO – Media – Celebrity Controversy & Hollywood"
+        keywords:
+          - "Blake Lively"
+          - "Justin Baldoni"
+          - "It Ends with Us"
+          - "Ryan Reynolds"
