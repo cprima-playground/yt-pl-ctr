@@ -103,8 +103,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        import numpy as np
         from bertopic import BERTopic
+        from hdbscan import HDBSCAN
         from sentence_transformers import SentenceTransformer
+        from umap import UMAP
     except ImportError:
         print("Missing dependencies. Install with:", file=sys.stderr)
         print("  uv sync --extra topic-discovery", file=sys.stderr)
@@ -178,20 +181,54 @@ def main() -> int:
         print(f"Too few documents ({len(documents)}) for meaningful clustering.", file=sys.stderr)
         return 1
 
-    # Embed
-    print(f"Embedding with {args.embedding_model} (first run downloads the model)...", flush=True)
-    embedding_model = SentenceTransformer(args.embedding_model)
+    # Embed — cache to disk so a crash during UMAP doesn't force re-embedding
+    embeddings_path = cache_dir / f"bertopic_embeddings_{channel.slug}.npy"
+    if embeddings_path.exists():
+        print(f"Loading cached embeddings from {embeddings_path} ...", flush=True)
+        embeddings = np.load(str(embeddings_path))
+        if embeddings.shape[0] != len(documents):
+            print("  Cached embeddings size mismatch — re-embedding.", flush=True)
+            embeddings = None
+    else:
+        embeddings = None
+
+    if embeddings is None:
+        print(f"Embedding with {args.embedding_model} (first run downloads the model)...", flush=True)
+        embedding_model = SentenceTransformer(args.embedding_model)
+        embeddings = embedding_model.encode(
+            documents, show_progress_bar=True, batch_size=32
+        )
+        np.save(str(embeddings_path), embeddings)
+        print(f"  Embeddings saved to {embeddings_path}", flush=True)
+
+    # UMAP with low_memory=True — prevents SIGBUS on memory-constrained systems (WSL2)
+    umap_model = UMAP(
+        n_neighbors=15,
+        n_components=5,
+        min_dist=0.0,
+        metric="cosine",
+        low_memory=True,
+    )
+
+    hdbscan_model = HDBSCAN(
+        min_cluster_size=args.min_topic_size,
+        metric="euclidean",
+        cluster_selection_method="eom",
+        prediction_data=True,
+        core_dist_n_jobs=1,
+    )
 
     # Fit BERTopic
-    print("Fitting BERTopic...", flush=True)
+    print("Fitting BERTopic (UMAP + HDBSCAN)...", flush=True)
     topic_model = BERTopic(
-        embedding_model=embedding_model,
+        umap_model=umap_model,
+        hdbscan_model=hdbscan_model,
         min_topic_size=args.min_topic_size,
         nr_topics=args.nr_topics,
         calculate_probabilities=False,
         verbose=False,
     )
-    topics, _ = topic_model.fit_transform(documents)
+    topics, _ = topic_model.fit_transform(documents, embeddings)
 
     # ── Results ────────────────────────────────────────────────────────────────
 

@@ -49,6 +49,7 @@ topic-discovery = [
     "sentence-transformers>=3.0.0",
     "umap-learn>=0.5.0",
     "hdbscan>=0.8.0",
+    "numpy>=1.24.0",
 ]
 
 [project.urls]
