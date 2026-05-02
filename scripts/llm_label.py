@@ -212,7 +212,7 @@ def main():
     # Load existing results to allow resuming
     existing = {}
     if output_path.exists():
-        for r in json.loads(output_path.read_text()):
+        for r in json.loads(output_path.read_text(encoding="utf-8")):
             existing[r["video_id"]] = r
 
     print(f"Model:   {args.model}")
@@ -237,7 +237,7 @@ def main():
 
         wikipedia = cache_mod.read_wikipedia(cache_dir, vid)
         features_f = cache_mod.episode_dir(cache_dir, vid) / "features.json"
-        features = json.loads(features_f.read_text()) if features_f.exists() else None
+        features = json.loads(features_f.read_text(encoding="utf-8")) if features_f.exists() else None
 
         title = meta.get("title", vid)[:60]
 
@@ -286,9 +286,9 @@ def main():
 
         # Flush every 10
         if new_count % 10 == 0:
-            output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False))
+            output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False), encoding="utf-8")
 
-    output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False))
+    output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False), encoding="utf-8")
 
     high = sum(1 for r in results.values() if r["confidence"] == "high")
     med  = sum(1 for r in results.values() if r["confidence"] == "medium")

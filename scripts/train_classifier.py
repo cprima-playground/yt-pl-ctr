@@ -139,7 +139,7 @@ def train(
         print("Run: just llm-label-all")
         sys.exit(1)
 
-    llm_raw = json.loads(llm_path.read_text())
+    llm_raw = json.loads(llm_path.read_text(encoding="utf-8"))
     # Exclude invented slugs (model hallucinations) and low-confidence labels
     cfg = None
     known_slugs = None
@@ -272,7 +272,7 @@ def train(
         },
     }
     (model_dir / "training_report.json").write_text(
-        json.dumps(report, indent=2, ensure_ascii=False)
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
     print(f"\nModel saved to: {model_dir}")

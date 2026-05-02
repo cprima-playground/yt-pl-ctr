@@ -75,7 +75,7 @@ def _status_ingest(cache_dir: Path) -> str:
     index_f = cache_dir / "index.json"
     if not index_f.exists():
         return "index.json missing — not started"
-    index = json.loads(index_f.read_text())
+    index = json.loads(index_f.read_text(encoding="utf-8"))
     total = len(index)
     with_transcript = sum(1 for e in index if e.get("has_transcript"))
     return f"{total} episodes | transcripts: {with_transcript}/{total}"
@@ -85,7 +85,7 @@ def _status_features(cache_dir: Path) -> str:
     index_f = cache_dir / "index.json"
     if not index_f.exists():
         return "no index.json"
-    index = json.loads(index_f.read_text())
+    index = json.loads(index_f.read_text(encoding="utf-8"))
     with_transcript = sum(1 for e in index if e.get("has_transcript"))
     # sample first entry to check if features exist rather than scanning all
     sample = next(
@@ -103,7 +103,7 @@ def _status_membership(cache_dir: Path) -> str:
     if not f.exists():
         return "not cached"
     try:
-        data = json.loads(f.read_text())
+        data = json.loads(f.read_text(encoding="utf-8"))
         fetched_at = datetime.datetime.fromisoformat(data["fetched_at"])
         age = datetime.datetime.now(datetime.UTC) - fetched_at
         hours = age.total_seconds() / 3600

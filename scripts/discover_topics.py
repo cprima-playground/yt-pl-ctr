@@ -161,7 +161,7 @@ def _discover_episode(
 def _load_existing(output_path: Path) -> dict[str, dict]:
     if not output_path.exists():
         return {}
-    data = json.loads(output_path.read_text())
+    data = json.loads(output_path.read_text(encoding="utf-8"))
     return {r["video_id"]: r for r in data}
 
 
@@ -194,7 +194,7 @@ def main() -> int:
         if not llm_path.exists():
             print("llm_labeled.json not found — run llm_label.py first.")
             return 1
-        llm_data = json.loads(llm_path.read_text())
+        llm_data = json.loads(llm_path.read_text(encoding="utf-8"))
         other_ids = {
             r["video_id"] for r in llm_data
             if r.get("category") == "other"
@@ -230,7 +230,7 @@ def main() -> int:
 
         wikipedia = cache_mod.read_wikipedia(cache_dir, vid)
         features_f = cache_mod.episode_dir(cache_dir, vid) / "features.json"
-        features = json.loads(features_f.read_text()) if features_f.exists() else None
+        features = json.loads(features_f.read_text(encoding="utf-8")) if features_f.exists() else None
 
         title = meta.get("title", vid)[:55]
         print(f"  [{i}/{total}] {title:<55} ", end="", flush=True)
@@ -279,7 +279,7 @@ def main() -> int:
         time.sleep(1.5)  # throttle to ~40 req/min, leaving headroom for concurrent jobs
 
         if new_count % 20 == 0:
-            output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False))
+            output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False), encoding="utf-8")
 
         # Milestone: every 100 new episodes print elapsed, rate, ETA, and top-5 topics
         if new_count % 100 == 0:
@@ -294,7 +294,7 @@ def main() -> int:
             print(f"\n── [{new_count} new / {i} seen] elapsed {elapsed_fmt}  rate {rate:.1f}/min  ETA {eta_fmt}")
             print(f"   Top 5: {top5}\n")
 
-    output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False))
+    output_path.write_text(json.dumps(list(results.values()), indent=2, ensure_ascii=False), encoding="utf-8")
 
     # ── Summary ────────────────────────────────────────────────────────────────
     from collections import defaultdict
@@ -323,7 +323,7 @@ def main() -> int:
     print("\n" + summary)
 
     summary_path = cache_dir / "topic_summary.txt"
-    summary_path.write_text(summary + "\n")
+    summary_path.write_text(summary + "\n", encoding="utf-8")
     print(f"\nSummary saved: {summary_path}")
     print(f"Raw data:      {output_path}")
 

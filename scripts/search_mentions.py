@@ -242,7 +242,7 @@ def save_plan(matches: list[MentionMatch], cache_dir: Path) -> Path:
         "count": len(matches),
         "matches": [asdict(m) for m in matches],
     }
-    plan_file.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    plan_file.write_text(json.dumps(data, indent=2, ensure_ascii=False, encoding="utf-8"))
     return plan_file
 
 
@@ -252,7 +252,7 @@ def load_plan(cache_dir: Path) -> list[MentionMatch]:
         print(f"No plan file found: {plan_file}", file=sys.stderr)
         print("Run with --save-plan first.", file=sys.stderr)
         sys.exit(1)
-    data = json.loads(plan_file.read_text())
+    data = json.loads(plan_file.read_text(encoding="utf-8"))
     return [MentionMatch(**m) for m in data["matches"]]
 
 
