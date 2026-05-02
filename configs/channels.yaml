@@ -233,9 +233,63 @@ channels:
     ingest_limit: 5000             # fetch full back-catalogue
     ml_confidence_threshold: 0.08
 
-    # Taxonomy and playlists to be defined after topic discovery.
-    # Workflow: fetch-metadata → ingest-channel → discover-topics → define taxonomy here
-    taxonomy: []
+    taxonomy:
+      - slug: eastern_europe
+        label: "Eastern Europe"
+        children:
+          - slug: ukraine_russia_conflict
+            label: "Ukraine & Russia conflict"
+          - slug: caucasus
+            label: "Caucasus region"
+
+      - slug: europe_eu
+        label: "European Politics & EU"
+        children:
+          - slug: europe_eu_politics
+            label: "European politics & EU"
+          - slug: nato_security
+            label: "NATO & European security"
+
+      - slug: middle_east
+        label: "Middle East"
+        children:
+          - slug: israel_palestine
+            label: "Israel & Palestine"
+          - slug: iran_middle_east
+            label: "Iran & Middle East"
+
+      - slug: east_asia
+        label: "East Asia"
+        children:
+          - slug: china_taiwan_japan
+            label: "China, Taiwan & Japan"
+
+      - slug: neutrality_law
+        label: "Neutrality & International Law"
+        children:
+          - slug: neutrality_sovereignty
+            label: "neutrality & sovereignty"
+          - slug: nuclear_deterrence
+            label: "nuclear weapons & deterrence"
+          - slug: international_law_sanctions
+            label: "international law & sanctions"
+
+      - slug: us_global_order
+        label: "US & Global Order"
+        children:
+          - slug: us_foreign_policy
+            label: "US foreign policy & military"
+          - slug: global_multipolarity
+            label: "global order & multipolarity"
+
+      - slug: media_governance
+        label: "Media & Governance"
+        children:
+          - slug: media_propaganda
+            label: "media & propaganda"
+          - slug: intelligence_covert_ops
+            label: "intelligence & covert operations"
+
     playlists: {}
 
   - name: "The New Atlas"
