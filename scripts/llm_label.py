@@ -183,10 +183,16 @@ def main():
         if not index:
             print("Cache index is empty — run fetch scripts first")
             return 1
-        # Filter to this channel's videos (by channel_id if set)
+        # Filter to this channel's videos — channel_id lives in metadata.json, not in
+        # the index entry, so we must read full metadata per episode to filter correctly.
         if channel_config.channel_id:
             before = len(index)
-            index = [e for e in index if e.get("channel_id") == channel_config.channel_id]
+            filtered = []
+            for e in index:
+                meta = cache_mod.read_metadata(cache_dir, e["video_id"])
+                if meta and meta.get("channel_id") == channel_config.channel_id:
+                    filtered.append(e)
+            index = filtered
             print(f"Channel filter: {len(index)}/{before} episodes for {channel_config.name}")
         # Apply min_duration filter
         min_dur = channel_config.min_duration
