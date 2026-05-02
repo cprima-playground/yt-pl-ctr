@@ -47,8 +47,10 @@ dev = [
 topic-discovery = [
     "bertopic>=0.16.0",
     "sentence-transformers>=3.0.0",
-    "umap-learn>=0.5.0",
     "numpy>=1.24.0",
+    # umap-learn excluded: its Cython extensions trigger SIGBUS on WSL2 even inside
+    # try/except (SIGBUS is a signal, not a Python exception). BERTopic falls back
+    # gracefully when umap is absent; we use PCA for dim reduction instead.
 ]
 
 [project.urls]
