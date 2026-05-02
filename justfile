@@ -80,8 +80,8 @@ retrain-channel CHANNEL:
 # ── Labeling pipeline ─────────────────────────────────────────────────────────
 
 # Run LLM labeling on all qualifying episodes (idempotent — skips cached)
-llm-label-all:
-    uv run python scripts/llm_label.py --all
+llm-label-all *ARGS:
+    uv run python scripts/llm_label.py --all {{ARGS}}
 
 # Run LLM labeling on specific video IDs
 # Usage: just llm-label MtoPEub7XwA znQB0FumtV8
@@ -89,18 +89,18 @@ llm-label *VIDEO_IDS:
     uv run python scripts/llm_label.py {{ VIDEO_IDS }}
 
 # Run LLM labeling on first N episodes
-llm-label-n N='20':
-    uv run python scripts/llm_label.py --limit {{ N }}
+llm-label-n N='20' *ARGS:
+    uv run python scripts/llm_label.py --limit {{ N }} {{ARGS}}
 
 # ── Feature pipeline ──────────────────────────────────────────────────────────
 
 # Build NLP features for all cached episodes with transcripts
-build-features:
-    uv run python scripts/build_features.py
+build-features *ARGS:
+    uv run python scripts/build_features.py {{ARGS}}
 
 # Fetch Wikipedia summaries for all episode guests
-fetch-wikipedia:
-    uv run python scripts/fetch_wikipedia.py
+fetch-wikipedia *ARGS:
+    uv run python scripts/fetch_wikipedia.py {{ARGS}}
 
 # ── Topic discovery ───────────────────────────────────────────────────────────
 
