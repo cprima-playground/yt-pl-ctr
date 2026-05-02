@@ -207,6 +207,7 @@ def _run_lda(
 
 def _run_bertopic(
     documents: list[str],
+    embedding_docs: list[str],
     titles: list[str],
     video_ids: list[str],
     cache_dir: Path,
@@ -247,12 +248,12 @@ def _run_bertopic(
         print("  Install with: uv sync --extra topic-discovery", file=sys.stderr)
         sys.exit(1)
 
-    # Embed (cached)
+    # Embed using truncated docs (encoder max ~256-512 tokens); cache by count
     embeddings_path = cache_dir / f"bertopic_embeddings_{channel_slug}.npy"
     if embeddings_path.exists():
         print(f"[3/5] Loading cached embeddings: {embeddings_path}", flush=True)
         embeddings = np.load(str(embeddings_path))
-        if embeddings.shape[0] != len(documents):
+        if embeddings.shape[0] != len(embedding_docs):
             print("  Size mismatch — discarding cache.", flush=True)
             embeddings = None
         else:
@@ -261,9 +262,9 @@ def _run_bertopic(
         embeddings = None
 
     if embeddings is None:
-        print(f"[3/5] Embedding {len(documents)} docs with {embedding_model_name} ...", flush=True)
+        print(f"[3/5] Embedding {len(embedding_docs)} docs with {embedding_model_name} ...", flush=True)
         emb_model = SentenceTransformer(embedding_model_name)
-        embeddings = emb_model.encode(documents, show_progress_bar=True, batch_size=32)
+        embeddings = emb_model.encode(embedding_docs, show_progress_bar=True, batch_size=32)
         np.save(str(embeddings_path), embeddings)
         print(f"  Saved to {embeddings_path}", flush=True)
 
@@ -341,8 +342,14 @@ def main() -> int:
     config = _load_config(args.config)
     channel = _select_channel(config, args.channel)
 
+    # bertopic: full transcript for c-TF-IDF; encoder sees only first _TRANSCRIPT_CHARS_BERTOPIC
     transcript_limit = None if args.engine in ("nmf", "lda") else _TRANSCRIPT_CHARS_BERTOPIC
-    transcript_desc = "no" if args.no_transcripts else ("full" if not transcript_limit else f"first {transcript_limit} chars")
+    if args.no_transcripts:
+        transcript_desc = "no"
+    elif args.engine == "bertopic":
+        transcript_desc = f"full (encoder truncated to {transcript_limit} chars)"
+    else:
+        transcript_desc = "full"
 
     print(f"Channel    : {channel.name}")
     print(f"Engine     : {args.engine}")
@@ -387,20 +394,26 @@ def main() -> int:
         entries = entries[:args.limit]
 
     print(f"[1/3] Loading {len(entries)} episodes ...", flush=True)
-    documents, video_ids, titles = [], [], []
+    documents, embedding_docs, video_ids, titles = [], [], [], []
     no_transcript = 0
     for e in entries:
         vid = e["video_id"]
         meta = cache_mod.read_metadata(cache_dir, vid)
         if not meta:
             continue
-        transcript = _load_transcript(cache_dir, vid, max_chars=transcript_limit)
-        if not transcript:
+        transcript_full = _load_transcript(cache_dir, vid, max_chars=None)
+        if not transcript_full:
             no_transcript += 1
-        doc = _build_document(meta.get("title", ""), meta.get("description", ""),
-                              transcript, args.no_transcripts)
-        if doc.strip():
-            documents.append(doc)
+        # Full transcript for c-TF-IDF keyword extraction
+        doc_full = _build_document(meta.get("title", ""), meta.get("description", ""),
+                                   transcript_full, args.no_transcripts)
+        # Truncated for sentence-transformer encoder (model max ~256-512 tokens)
+        transcript_trunc = transcript_full[:transcript_limit] if transcript_limit and transcript_full else transcript_full
+        doc_trunc = _build_document(meta.get("title", ""), meta.get("description", ""),
+                                    transcript_trunc, args.no_transcripts)
+        if doc_full.strip():
+            documents.append(doc_full)
+            embedding_docs.append(doc_trunc)
             video_ids.append(vid)
             titles.append(meta.get("title", ""))
 
@@ -417,7 +430,7 @@ def main() -> int:
         topics = _run_lda(documents, titles, args.nr_topics, args.min_topic_size)
     else:
         topics, _ = _run_bertopic(
-            documents, titles, video_ids, cache_dir, channel.slug,
+            documents, embedding_docs, titles, video_ids, cache_dir, channel.slug,
             args.nr_topics, args.min_topic_size,
             args.embedding_model, args.dim_reduction,
         )
