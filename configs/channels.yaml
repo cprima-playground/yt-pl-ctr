@@ -290,7 +290,13 @@ channels:
           - slug: intelligence_covert_ops
             label: "intelligence & covert operations"
 
-    playlists: {}
+    playlists:
+      caucasus:
+        title: "NS – Eastern Europe – Caucasus Region"
+      intelligence_covert_ops:
+        title: "NS – Media & Governance – Intelligence & Covert Operations"
+      china_taiwan_japan:
+        title: "NS – East Asia – China, Taiwan & Japan"
 
   - name: "The New Atlas"
     url: "https://www.youtube.com/@TheNewAtlas/videos"
