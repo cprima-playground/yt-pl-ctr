@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Unsupervised topic discovery using BERTopic.
+"""Unsupervised topic discovery — TF-IDF + NMF (default) or BERTopic (--engine bertopic).
 
-Combines title + description + transcript for each episode, embeds with
-sentence-transformers, reduces with UMAP, clusters with HDBSCAN, and extracts
-topic keywords via c-TF-IDF. No seed taxonomy required.
+Default engine uses only scikit-learn (already installed, no extra deps):
+  TF-IDF vectorisation → NMF decomposition → top keywords per topic
 
-Use the output to define the taxonomy in configs/channels.yaml, then run
-llm_label.py to produce fine-grained per-episode labels for classifier training.
+BERTopic engine (richer but requires heavy native extensions that may SIGBUS on WSL2):
+  sentence-transformers embeddings → PCA/UMAP → HDBSCAN → c-TF-IDF
+  Requires: uv sync --extra topic-discovery
 
-Install extra dependencies first:
-    uv sync --extra topic-discovery
+No seed taxonomy required. Use the output to define the taxonomy in
+configs/channels.yaml, then run llm_label.py.
 
 Usage:
+    # Default (sklearn TF-IDF + NMF, works everywhere):
     uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies"
-    uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --min-topic-size 5
+
+    # Control topic count:
     uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --nr-topics 20
-    uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --no-transcripts
+
+    # BERTopic engine (requires extra deps):
+    uv run python scripts/discover_topics_bertopic.py --channel "Neutrality Studies" --engine bertopic
 """
 
 import argparse
@@ -34,8 +38,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import cache as cache_mod
 from yt_pl_ctr.models import Config, ChannelConfig
 
-# Transcript is truncated to keep embeddings within sentence-transformer token limits.
-# The opening ~3000 chars typically cover the intro and main topic framing.
 _TRANSCRIPT_CHARS = 3000
 _DESCRIPTION_CHARS = 800
 
@@ -68,72 +70,201 @@ def _load_transcript(cache_dir: Path, video_id: str) -> str:
     return ""
 
 
-def _build_document(title: str, description: str, transcript: str) -> str:
-    """Combine fields into one document. Title repeated for embedding weight."""
-    parts = [title, title]  # repeat title so it anchors the topic signal
+def _build_document(title: str, description: str, transcript: str, no_transcripts: bool) -> str:
+    parts = [title, title]  # repeat title to anchor topic signal
     if description:
         parts.append(description[:_DESCRIPTION_CHARS])
-    if transcript:
+    if not no_transcripts and transcript:
         parts.append(transcript)
     return " ".join(p.strip() for p in parts if p.strip())
 
 
+# ── Engine: sklearn TF-IDF + NMF ──────────────────────────────────────────────
+
+def _run_nmf(
+    documents: list[str],
+    titles: list[str],
+    nr_topics: int,
+    min_topic_size: int,
+) -> list[dict]:
+    print(f"[2/3] Fitting TF-IDF + NMF ({nr_topics} topics) ...", flush=True)
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.decomposition import NMF
+
+    vectorizer = TfidfVectorizer(
+        max_df=0.85,
+        min_df=max(2, min_topic_size // 2),
+        max_features=5000,
+        ngram_range=(1, 2),
+        stop_words="english",
+    )
+    tfidf = vectorizer.fit_transform(documents)
+    print(f"  Vocabulary: {len(vectorizer.get_feature_names_out())} terms", flush=True)
+
+    model = NMF(n_components=nr_topics, random_state=42, max_iter=400)
+    W = model.fit_transform(tfidf)  # doc-topic matrix
+    H = model.components_            # topic-term matrix
+    print("  Done.", flush=True)
+
+    terms = vectorizer.get_feature_names_out()
+    topic_assignments = W.argmax(axis=1)
+
+    topics = []
+    for tid in range(nr_topics):
+        top_idx = H[tid].argsort()[::-1][:10]
+        keywords = [terms[i] for i in top_idx]
+        doc_indices = [i for i, t in enumerate(topic_assignments) if t == tid]
+        if len(doc_indices) < min_topic_size:
+            continue
+        # sort by topic weight descending for representative titles
+        doc_indices_sorted = sorted(doc_indices, key=lambda i: W[i, tid], reverse=True)
+        topics.append({
+            "topic_id": tid,
+            "count": len(doc_indices),
+            "keywords": keywords,
+            "representative_titles": [titles[i] for i in doc_indices_sorted[:5]],
+            "doc_indices": doc_indices,
+        })
+
+    topics.sort(key=lambda t: t["count"], reverse=True)
+    return topics
+
+
+# ── Engine: BERTopic ───────────────────────────────────────────────────────────
+
+def _run_bertopic(
+    documents: list[str],
+    titles: list[str],
+    video_ids: list[str],
+    cache_dir: Path,
+    channel_slug: str,
+    nr_topics: int | None,
+    min_topic_size: int,
+    embedding_model_name: str,
+    dim_reduction: str,
+) -> tuple[list[dict], list[int]]:
+    print("[1/5] Importing BERTopic stack ...", flush=True)
+    try:
+        import numpy as np
+        print("  numpy ... ok", flush=True)
+        from bertopic import BERTopic
+        print("  bertopic ... ok", flush=True)
+        from hdbscan import HDBSCAN
+        print("  hdbscan ... ok", flush=True)
+        from sentence_transformers import SentenceTransformer
+        print("  sentence_transformers ... ok", flush=True)
+        if dim_reduction == "umap":
+            from umap import UMAP
+            print("  umap ... ok", flush=True)
+        else:
+            from sklearn.decomposition import PCA
+            print("  sklearn PCA ... ok", flush=True)
+    except ImportError as e:
+        print(f"  Missing: {e}", file=sys.stderr)
+        print("  Install with: uv sync --extra topic-discovery", file=sys.stderr)
+        sys.exit(1)
+
+    # Embed (cached)
+    embeddings_path = cache_dir / f"bertopic_embeddings_{channel_slug}.npy"
+    if embeddings_path.exists():
+        print(f"[3/5] Loading cached embeddings: {embeddings_path}", flush=True)
+        embeddings = np.load(str(embeddings_path))
+        if embeddings.shape[0] != len(documents):
+            print("  Size mismatch — discarding cache.", flush=True)
+            embeddings = None
+        else:
+            print(f"  Loaded {embeddings.shape}", flush=True)
+    else:
+        embeddings = None
+
+    if embeddings is None:
+        print(f"[3/5] Embedding {len(documents)} docs with {embedding_model_name} ...", flush=True)
+        emb_model = SentenceTransformer(embedding_model_name)
+        embeddings = emb_model.encode(documents, show_progress_bar=True, batch_size=32)
+        np.save(str(embeddings_path), embeddings)
+        print(f"  Saved to {embeddings_path}", flush=True)
+
+    n_components = min(50, len(documents) - 1)
+    if dim_reduction == "umap":
+        print(f"[4/5] UMAP → {n_components}d (low_memory=True) ...", flush=True)
+        dim_model = UMAP(n_neighbors=15, n_components=5, min_dist=0.0,
+                         metric="cosine", low_memory=True)
+    else:
+        print(f"[4/5] PCA → {n_components}d ...", flush=True)
+        dim_model = PCA(n_components=n_components)
+
+    hdbscan_model = HDBSCAN(
+        min_cluster_size=min_topic_size, metric="euclidean",
+        cluster_selection_method="eom", prediction_data=True, core_dist_n_jobs=1,
+    )
+
+    print("[5/5] Fitting BERTopic ...", flush=True)
+    topic_model = BERTopic(
+        umap_model=dim_model, hdbscan_model=hdbscan_model,
+        min_topic_size=min_topic_size, nr_topics=nr_topics,
+        calculate_probabilities=False, verbose=False,
+    )
+    raw_topics, _ = topic_model.fit_transform(documents, embeddings)
+    print("  Done.", flush=True)
+
+    topic_info = topic_model.get_topic_info()
+    named = topic_info[topic_info["Topic"] != -1]
+    topics = []
+    for _, row in named.sort_values("Count", ascending=False).iterrows():
+        tid = row["Topic"]
+        doc_indices = [i for i, t in enumerate(raw_topics) if t == tid]
+        topics.append({
+            "topic_id": int(tid),
+            "count": int(row["Count"]),
+            "keywords": [w for w, _ in topic_model.get_topic(tid)][:10],
+            "representative_titles": [titles[i] for i in doc_indices[:5]],
+            "doc_indices": doc_indices,
+        })
+    return topics, raw_topics
+
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Unsupervised topic discovery with BERTopic",
+        description="Unsupervised topic discovery (default: TF-IDF + NMF, no extra deps)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--cache-dir", type=Path, default=None)
-    parser.add_argument(
-        "--config", type=Path,
-        default=Path(__file__).parent.parent / "configs" / "channels.yaml",
-    )
-    parser.add_argument("--channel", default=None,
-                        help="Channel name from config (default: first)")
+    parser.add_argument("--config", type=Path,
+                        default=Path(__file__).parent.parent / "configs" / "channels.yaml")
+    parser.add_argument("--channel", default=None)
+    parser.add_argument("--nr-topics", type=int, default=20,
+                        help="Number of topics to discover (default: 20)")
     parser.add_argument("--min-topic-size", type=int, default=3,
-                        help="Minimum episodes per topic cluster (default: 3)")
-    parser.add_argument("--nr-topics", type=int, default=None,
-                        help="Target number of topics; None = auto (default: auto)")
+                        help="Minimum episodes per topic (default: 3)")
     parser.add_argument("--no-transcripts", action="store_true",
-                        help="Use only title + description (faster, less signal)")
-    parser.add_argument("--limit", type=int, default=None,
-                        help="Process at most N episodes")
+                        help="Use only title + description")
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--engine", choices=["nmf", "bertopic"], default="nmf",
+                        help="nmf = TF-IDF+NMF, no extra deps (default); bertopic = BERTopic")
     parser.add_argument("--embedding-model", default="all-MiniLM-L6-v2",
-                        help="Sentence-transformers model name (default: all-MiniLM-L6-v2)")
-    parser.add_argument("--dim-reduction", choices=["umap", "pca"], default="pca",
-                        help="Dimensionality reduction: pca (light, default) or umap (richer but memory-heavy)")
+                        help="[bertopic only] sentence-transformers model")
+    parser.add_argument("--dim-reduction", choices=["pca", "umap"], default="pca",
+                        help="[bertopic only] dim reduction (default: pca)")
     args = parser.parse_args()
-
-    try:
-        import numpy as np
-        print("[1/5] Imports: numpy ... ok", flush=True)
-        from bertopic import BERTopic
-        print("[1/5] Imports: bertopic ... ok", flush=True)
-        from hdbscan import HDBSCAN
-        print("[1/5] Imports: hdbscan ... ok", flush=True)
-        from sentence_transformers import SentenceTransformer
-        print("[1/5] Imports: sentence_transformers ... ok", flush=True)
-        if args.dim_reduction == "umap":
-            from umap import UMAP
-            print("[1/5] Imports: umap ... ok", flush=True)
-        else:
-            from sklearn.decomposition import PCA
-            print("[1/5] Imports: sklearn PCA ... ok", flush=True)
-    except ImportError as e:
-        print(f"Missing dependency: {e}", file=sys.stderr)
-        print("Install with:  uv sync --extra topic-discovery", file=sys.stderr)
-        return 1
 
     cache_dir = args.cache_dir or _default_cache_dir()
     config = _load_config(args.config)
     channel = _select_channel(config, args.channel)
 
+    print(f"Channel    : {channel.name}")
+    print(f"Engine     : {args.engine}")
+    print(f"Topics     : {args.nr_topics}")
+    print(f"Transcripts: {'no' if args.no_transcripts else 'yes (first %d chars)' % _TRANSCRIPT_CHARS}")
+    print()
+
+    # Load index and filter
     index = cache_mod.read_index(cache_dir)
     if not index:
         print("Cache index is empty — run download_test_data.py first.")
         return 1
 
-    # Filter to channel
     if channel.channel_id:
         entries = []
         for e in index:
@@ -145,172 +276,73 @@ def main() -> int:
 
     if channel.min_duration:
         entries = [e for e in entries if (e.get("duration") or 0) >= channel.min_duration]
-
     cutoff = channel.min_upload_date_str()
     if cutoff:
         entries = [e for e in entries if (e.get("upload_date") or "") >= cutoff]
-
     if args.limit:
         entries = entries[:args.limit]
 
-    total = len(entries)
-    print(f"Channel       : {channel.name}")
-    print(f"Episodes      : {total}")
-    print(f"Embedding     : {args.embedding_model}")
-    print(f"Dim reduction : {args.dim_reduction}")
-    print(f"Transcripts   : {'no' if args.no_transcripts else 'yes (first %d chars)' % _TRANSCRIPT_CHARS}")
-    print()
-
-    # Build documents
-    documents: list[str] = []
-    video_ids: list[str] = []
-    titles: list[str] = []
-
-    print("[2/5] Loading episode text...", flush=True)
+    print(f"[1/3] Loading {len(entries)} episodes ...", flush=True)
+    documents, video_ids, titles = [], [], []
     no_transcript = 0
     for e in entries:
         vid = e["video_id"]
         meta = cache_mod.read_metadata(cache_dir, vid)
-        if meta is None:
+        if not meta:
             continue
-
-        title = meta.get("title", "")
-        description = meta.get("description", "")
-        transcript = "" if args.no_transcripts else _load_transcript(cache_dir, vid)
+        transcript = _load_transcript(cache_dir, vid)
         if not transcript:
             no_transcript += 1
-
-        doc = _build_document(title, description, transcript)
+        doc = _build_document(meta.get("title", ""), meta.get("description", ""),
+                              transcript, args.no_transcripts)
         if doc.strip():
             documents.append(doc)
             video_ids.append(vid)
-            titles.append(title)
+            titles.append(meta.get("title", ""))
 
-    print(f"[2/5] Documents built: {len(documents)} (missing transcript: {no_transcript})", flush=True)
-    print()
+    print(f"  {len(documents)} documents (no transcript: {no_transcript})", flush=True)
 
     if len(documents) < args.min_topic_size * 2:
-        print(f"Too few documents ({len(documents)}) for meaningful clustering.", file=sys.stderr)
+        print(f"Too few documents ({len(documents)}).", file=sys.stderr)
         return 1
 
-    # Embed — cache to disk so a crash during dim-reduction doesn't force re-embedding
-    embeddings_path = cache_dir / f"bertopic_embeddings_{channel.slug}.npy"
-    if embeddings_path.exists():
-        print(f"[3/5] Loading cached embeddings: {embeddings_path}", flush=True)
-        embeddings = np.load(str(embeddings_path))
-        if embeddings.shape[0] != len(documents):
-            print("  Size mismatch — discarding cache and re-embedding.", flush=True)
-            embeddings = None
-        else:
-            print(f"  Loaded {embeddings.shape} embeddings.", flush=True)
+    # Run chosen engine
+    if args.engine == "nmf":
+        topics = _run_nmf(documents, titles, args.nr_topics, args.min_topic_size)
     else:
-        embeddings = None
-
-    if embeddings is None:
-        print(f"[3/5] Embedding {len(documents)} docs with {args.embedding_model}", flush=True)
-        print("  (First run downloads the model — may take a minute)", flush=True)
-        embedding_model = SentenceTransformer(args.embedding_model)
-        embeddings = embedding_model.encode(
-            documents, show_progress_bar=True, batch_size=32
+        topics, _ = _run_bertopic(
+            documents, titles, video_ids, cache_dir, channel.slug,
+            args.nr_topics, args.min_topic_size,
+            args.embedding_model, args.dim_reduction,
         )
-        np.save(str(embeddings_path), embeddings)
-        print(f"  Saved to {embeddings_path}", flush=True)
 
-    # Dimensionality reduction
-    n_components = min(50, len(documents) - 1)
-    if args.dim_reduction == "umap":
-        print(f"[4/5] UMAP → {n_components}d (low_memory=True) ...", flush=True)
-        dim_model = UMAP(
-            n_neighbors=15,
-            n_components=5,
-            min_dist=0.0,
-            metric="cosine",
-            low_memory=True,
-        )
-    else:
-        print(f"[4/5] PCA → {n_components}d ...", flush=True)
-        dim_model = PCA(n_components=n_components)
-
-    hdbscan_model = HDBSCAN(
-        min_cluster_size=args.min_topic_size,
-        metric="euclidean",
-        cluster_selection_method="eom",
-        prediction_data=True,
-        core_dist_n_jobs=1,
-    )
-
-    print("[5/5] Fitting BERTopic (HDBSCAN clustering + c-TF-IDF) ...", flush=True)
-    topic_model = BERTopic(
-        umap_model=dim_model,
-        hdbscan_model=hdbscan_model,
-        min_topic_size=args.min_topic_size,
-        nr_topics=args.nr_topics,
-        calculate_probabilities=False,
-        verbose=False,
-    )
-    topics, _ = topic_model.fit_transform(documents, embeddings)
-    print("  Done.", flush=True)
-
-    # ── Results ────────────────────────────────────────────────────────────────
-
-    topic_info = topic_model.get_topic_info()
-    # Topic -1 is the outlier cluster (unclustered docs)
-    named_topics = topic_info[topic_info["Topic"] != -1]
-    outliers = topic_info[topic_info["Topic"] == -1]["Count"].values[0] if -1 in topic_info["Topic"].values else 0
-
-    print(f"\nDiscovered {len(named_topics)} topics  |  {outliers} unclustered episodes\n")
-    print(f"{'#':<4} {'Count':>6}  {'Keywords'}")
-    print("─" * 70)
-
-    topic_assignments: list[dict] = []
-    for _, row in named_topics.sort_values("Count", ascending=False).iterrows():
-        tid = row["Topic"]
-        count = row["Count"]
-        keywords = [w for w, _ in topic_model.get_topic(tid)][:8]
-        print(f"{tid:<4} {count:>6}  {', '.join(keywords)}")
+    # ── Print results ──────────────────────────────────────────────────────────
+    outliers = len(documents) - sum(t["count"] for t in topics)
+    print(f"\nDiscovered {len(topics)} topics  |  {outliers} unclustered\n")
+    print(f"{'ID':<4} {'Count':>6}  Keywords")
+    print("─" * 72)
+    for t in topics:
+        print(f"{t['topic_id']:<4} {t['count']:>6}  {', '.join(t['keywords'][:8])}")
 
     print()
-
-    # Per-topic: show 3 representative episode titles
     print("── Representative episodes per topic ──")
-    for _, row in named_topics.sort_values("Count", ascending=False).iterrows():
-        tid = row["Topic"]
-        keywords = [w for w, _ in topic_model.get_topic(tid)][:5]
-        print(f"\nTopic {tid}  [{', '.join(keywords)}]")
-        indices = [i for i, t in enumerate(topics) if t == tid][:3]
-        for idx in indices:
-            print(f"  • {titles[idx][:90]}")
+    for t in topics:
+        print(f"\nTopic {t['topic_id']}  [{', '.join(t['keywords'][:5])}]")
+        for title in t["representative_titles"][:3]:
+            print(f"  • {title[:90]}")
 
-    # ── Save results ───────────────────────────────────────────────────────────
-
-    out_path = cache_dir / f"bertopic_{channel.slug}.json"
-    results = {
+    # ── Save ───────────────────────────────────────────────────────────────────
+    out_path = cache_dir / f"topics_{channel.slug}.json"
+    out_path.write_text(json.dumps({
         "channel": channel.name,
+        "engine": args.engine,
         "total_documents": len(documents),
-        "n_topics": len(named_topics),
-        "n_outliers": int(outliers),
-        "topics": [
-            {
-                "topic_id": int(row["Topic"]),
-                "count": int(row["Count"]),
-                "keywords": [w for w, _ in topic_model.get_topic(row["Topic"])][:10],
-                "representative_titles": [
-                    titles[i] for i in
-                    [j for j, t in enumerate(topics) if t == row["Topic"]][:5]
-                ],
-            }
-            for _, row in named_topics.sort_values("Count", ascending=False).iterrows()
-        ],
-        "episode_assignments": [
-            {"video_id": vid, "title": title, "topic_id": int(topic)}
-            for vid, title, topic in zip(video_ids, titles, topics)
-        ],
-    }
-    out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False))
-    print(f"\nResults saved: {out_path}")
-    print("\nNext step: review topics above, define taxonomy in configs/channels.yaml,")
-    print("then run: just llm-label-all")
-
+        "n_topics": len(topics),
+        "n_unclustered": outliers,
+        "topics": [{k: v for k, v in t.items() if k != "doc_indices"} for t in topics],
+    }, indent=2, ensure_ascii=False))
+    print(f"\nSaved: {out_path}")
+    print("Next: review topics, define taxonomy in configs/channels.yaml, then: just llm-label-all")
     return 0
 
 
