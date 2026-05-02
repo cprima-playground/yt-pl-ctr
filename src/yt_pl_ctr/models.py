@@ -75,6 +75,10 @@ class ChannelConfig(BaseModel):
         default=0,
         description="Minimum video duration in seconds. Videos shorter than this are skipped.",
     )
+    ingest_limit: int = Field(
+        default=5000,
+        description="Maximum videos to fetch during metadata ingest. Age cutoff stops early anyway.",
+    )
     max_age_days: int | None = Field(
         default=None,
         description="Ignore videos older than this many days. None means no limit.",

@@ -76,7 +76,7 @@ def main():
         channel_config = config.channels[0]
 
     cutoff = channel_config.min_upload_date_str()
-    limit = args.limit or 5000  # generous cap; age filter stops early anyway
+    limit = args.limit or channel_config.ingest_limit
 
     print(f"Channel : {channel_config.name}")
     print(f"URL     : {channel_config.url}")

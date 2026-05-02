@@ -135,7 +135,8 @@ channels:
     channel_id: "UCL0u5uz7KZ9q-pe-VC8TY-w"
     playlist_prefix: "CO"
     min_duration: 600         # 10 min — include show segments, not just shorts
-    max_age_days: 365
+    max_age_days: 730
+    ingest_limit: 1500
     ml_confidence_threshold: 0.08
 
     taxonomy:
@@ -210,14 +211,14 @@ channels:
     keyword_playlists:
       france_europe:
         title: "CO – International – France & Europe"
-        min_mentions: 6
+        min_mentions: 5
         keywords:
           - "Brigitte Macron"
           - "Emmanuel Macron"
           - "Macron"
       celebrity_controversy:
         title: "CO – Media – Celebrity Controversy & Hollywood"
-        min_mentions: 2
+        min_mentions: 5
         keywords:
           - "Blake Lively"
           - "Justin Baldoni"
