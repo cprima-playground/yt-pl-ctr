@@ -219,7 +219,7 @@ def main():
 
     print(f"Model:   {args.model}")
     print(f"Target:  {len(targets)} episodes")
-    print(f"Cached:  {len(existing)} already labeled (will skip)")
+    print(f"Cached:  {len(existing)} in output file (will skip)")
     print(f"Output:  {output_path}")
     print(flush=True)
 
@@ -255,6 +255,7 @@ def main():
                 "reason": label.get("reason", ""),
                 "model": args.model,
             }
+            print(f"  [{i}/{len(targets)}] {title[:60]} (cached) → {label.get('category', 'other')}")
             continue  # restored from cache, no API call
 
         print(f"  [{i}/{len(targets)}] {title} ... ", end="", flush=True)
