@@ -5,6 +5,18 @@
 default:
     @just --list
 
+# ── Channel shortcuts ─────────────────────────────────────────────────────────
+
+# Trigger the JRE sync workflow on GitHub Actions (dry-run by default)
+jre dry_run='true':
+    gh workflow run sync_playlists.yml --repo cprima-playground/yt-pl-ctr --ref main \
+      -f dry_run={{ dry_run }} -f limit=30
+    @echo "Triggered — watch with: gh run list --repo cprima-playground/yt-pl-ctr --limit 3"
+
+# Run Candace Owens keyword mention search against local cache (no API writes)
+candace:
+    uv run python scripts/search_mentions.py --channel "Candace Owens"
+
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
 # Run the full pipeline (all phases, LLM skipped unless --llm-limit provided separately)
