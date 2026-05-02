@@ -75,7 +75,7 @@ def main():
     # Resolve channel config for filtering
     channel_config = None
     if args.channel:
-        with open(args.config) as f:
+        with open(args.config, encoding="utf-8") as f:
             cfg = Config.model_validate(yaml.safe_load(f))
         matches = [c for c in cfg.channels if c.name.lower() == args.channel.lower()]
         if not matches:

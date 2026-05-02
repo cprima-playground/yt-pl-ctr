@@ -147,7 +147,7 @@ def train(
     try:
         import yaml
         config_path = Path(__file__).parent.parent / "configs" / "channels.yaml"
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             from yt_pl_ctr.models import Config
             cfg = Config.model_validate(yaml.safe_load(f))
         if channel_slug:
@@ -302,7 +302,7 @@ def main() -> int:
     if args.channel:
         import yaml
         config_path = Path(__file__).parent.parent / "configs" / "channels.yaml"
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             from yt_pl_ctr.models import Config
             cfg = Config.model_validate(yaml.safe_load(f))
         matches = [c for c in cfg.channels if c.name.lower() == args.channel.lower()]

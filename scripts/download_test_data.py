@@ -62,7 +62,7 @@ def main():
     args = parser.parse_args()
 
     config_path = args.config or _default_config()
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         config = Config.model_validate(yaml.safe_load(f))
 
     if args.channel:

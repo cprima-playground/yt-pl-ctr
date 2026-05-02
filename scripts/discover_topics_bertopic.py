@@ -50,7 +50,7 @@ def _default_cache_dir() -> Path:
 
 
 def _load_config(path: Path) -> Config:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return Config.model_validate(yaml.safe_load(f))
 
 
