@@ -216,8 +216,8 @@ def _run_bertopic(
     embedding_model_name: str,
     dim_reduction: str,
 ) -> tuple[list[dict], list[int]]:
-    # Must be set before any numba-backed package is imported (umap-learn triggers numba
-    # at load time and SIGBUS on WSL2 without this).
+    # NUMBA_DISABLE_JIT must be set before any numba-backed package is imported.
+    # umap-learn and hdbscan both trigger numba at load time and SIGBUS on WSL2.
     import os
     os.environ["NUMBA_DISABLE_JIT"] = "1"
     os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_bertopic_cache")
@@ -228,8 +228,7 @@ def _run_bertopic(
         print("  numpy ... ok", flush=True)
         from bertopic import BERTopic
         print("  bertopic ... ok", flush=True)
-        from fast_hdbscan import HDBSCAN
-        print("  fast_hdbscan ... ok", flush=True)
+        from sklearn.cluster import KMeans
         from sentence_transformers import SentenceTransformer
         print("  sentence_transformers ... ok", flush=True)
         if dim_reduction == "umap":
@@ -272,16 +271,15 @@ def _run_bertopic(
         print(f"[4/5] PCA → {n_components}d ...", flush=True)
         dim_model = PCA(n_components=n_components)
 
-    hdbscan_model = HDBSCAN(
-        min_cluster_size=min_topic_size, metric="euclidean",
-        cluster_selection_method="eom", prediction_data=True, core_dist_n_jobs=1,
-    )
+    # KMeans: no hdbscan/numba dep; assigns all docs to a topic (no outlier cluster).
+    # BERTopic accepts any sklearn-compatible clusterer via the hdbscan_model param.
+    n_clusters = nr_topics if nr_topics else 20
+    cluster_model = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
 
     print("[5/5] Fitting BERTopic ...", flush=True)
     topic_model = BERTopic(
-        umap_model=dim_model, hdbscan_model=hdbscan_model,
-        min_topic_size=min_topic_size, nr_topics=nr_topics,
-        calculate_probabilities=False, verbose=False,
+        umap_model=dim_model, hdbscan_model=cluster_model,
+        nr_topics=nr_topics, calculate_probabilities=False, verbose=False,
     )
     raw_topics, _ = topic_model.fit_transform(documents, embeddings)
     print("  Done.", flush=True)
