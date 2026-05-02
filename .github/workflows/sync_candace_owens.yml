@@ -1,0 +1,75 @@
+name: Sync Candace Owens Playlists
+
+# Classifies the latest Candace Owens episodes and adds them to the configured
+# YouTube playlists (ML-based + keyword-based).
+#
+# In CI, transcripts are not available (yt-dlp is bot-blocked on GitHub Actions IPs).
+# ML classification runs on title + description only, using the committed model at
+# models/candace_owens/. Keyword playlists scan title + description only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Videos to process'
+        required: false
+        default: '30'
+      dry_run:
+        description: 'Dry run — classify but do not write to YouTube'
+        type: boolean
+        default: false
+  schedule:
+    # Run daily at 04:17 UTC (offset from JRE to avoid quota overlap)
+    - cron: "17 4 * * *"
+
+# Prevent concurrent runs — a slow or stuck run must finish before the next fires.
+concurrency:
+  group: sync-candace-owens
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Sync Candace Owens playlists
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          LIMIT="${{ inputs.limit || 30 }}"
+          DRY_RUN="${{ inputs.dry_run }}"
+
+          CMD=(uv run yt-pl-ctr sync
+            --config configs/channels.yaml
+            --channel "https://www.youtube.com/@RealCandaceO/videos"
+            --limit "$LIMIT"
+            --verbose
+          )
+
+          if [ "$DRY_RUN" = "true" ]; then
+            CMD+=(--dry-run)
+          fi
+
+          echo "Running: ${CMD[*]}"
+          "${CMD[@]}"
