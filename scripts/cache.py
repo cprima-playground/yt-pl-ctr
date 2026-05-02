@@ -24,11 +24,11 @@ def episode_dir(cache_dir: Path, video_id: str) -> Path:
 
 def read_index(cache_dir: Path) -> list[dict]:
     f = cache_dir / "index.json"
-    return json.loads(f.read_text()) if f.exists() else []
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
 
 
 def write_index(cache_dir: Path, entries: list[dict]) -> None:
-    (cache_dir / "index.json").write_text(json.dumps(entries, indent=2, ensure_ascii=False))
+    (cache_dir / "index.json").write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def index_entry(video: dict) -> dict:
@@ -48,12 +48,12 @@ def index_entry(video: dict) -> dict:
 def write_metadata(cache_dir: Path, video: dict) -> None:
     d = episode_dir(cache_dir, video["video_id"])
     d.mkdir(parents=True, exist_ok=True)
-    (d / "metadata.json").write_text(json.dumps(video, indent=2, ensure_ascii=False))
+    (d / "metadata.json").write_text(json.dumps(video, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_metadata(cache_dir: Path, video_id: str) -> dict | None:
     f = episode_dir(cache_dir, video_id) / "metadata.json"
-    return json.loads(f.read_text()) if f.exists() else None
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
 
 
 # ── Wikipedia ─────────────────────────────────────────────────────────────────
@@ -63,12 +63,12 @@ def write_wikipedia(cache_dir: Path, video_id: str, data: dict) -> None:
     """Store raw Wikipedia data — no category mapping, just text for ML features."""
     d = episode_dir(cache_dir, video_id)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "wikipedia.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    (d / "wikipedia.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def read_wikipedia(cache_dir: Path, video_id: str) -> dict | None:
     f = episode_dir(cache_dir, video_id) / "wikipedia.json"
-    return json.loads(f.read_text()) if f.exists() else None
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
 
 
 def has_wikipedia(cache_dir: Path, video_id: str) -> bool:
@@ -114,7 +114,7 @@ def read_llm_response(
     f = episode_dir(cache_dir, video_id) / "llm_response.json"
     if not f.exists():
         return None
-    data = json.loads(f.read_text())
+    data = json.loads(f.read_text(encoding="utf-8"))
     if data.get("model") != model:
         return None
     cached_pk = data.get("prompt_key")
@@ -151,7 +151,7 @@ def write_llm_response(
         "taxonomy_snapshot": taxonomy_snapshot,  # [{"slug": ..., "label": ...}, ...]
         "result": result,
     }
-    (d / "llm_response.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    (d / "llm_response.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 # ── Playlist membership ────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ def read_playlist_membership(
     f = _membership_path(cache_dir)
     if not f.exists():
         return None
-    data = json.loads(f.read_text())
+    data = json.loads(f.read_text(encoding="utf-8"))
     try:
         fetched_at = datetime.datetime.fromisoformat(data["fetched_at"])
         age = datetime.datetime.now(datetime.UTC) - fetched_at
@@ -186,7 +186,7 @@ def write_playlist_membership(cache_dir: Path, playlists: dict, membership: dict
         "playlists": playlists,
         "membership": membership,
     }
-    _membership_path(cache_dir).write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    _membership_path(cache_dir).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def invalidate_playlist_membership(cache_dir: Path) -> bool:
