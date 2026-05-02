@@ -106,13 +106,20 @@ def _make_lemma_tokenizer():
     import re
     import nltk
     from nltk.stem import WordNetLemmatizer
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
     nltk.download("wordnet", quiet=True)
     nltk.download("omw-1.4", quiet=True)
     _lem = WordNetLemmatizer()
-    # Matches sklearn's default token pattern (words of 2+ chars)
     _token_re = re.compile(r"(?u)\b[a-z]{2,}\b")
+    # Pre-filter before lemmatizing: stop words and fillers must be removed in their
+    # original form, otherwise "was"→"wa", "has"→"ha", "us"→"u" slip through.
+    _prefilter = ENGLISH_STOP_WORDS | _TRANSCRIPT_FILLERS
     def tokenizer(text: str) -> list[str]:
-        return [_lem.lemmatize(t) for t in _token_re.findall(text.lower())]
+        return [
+            _lem.lemmatize(t)
+            for t in _token_re.findall(text.lower())
+            if t not in _prefilter
+        ]
     return tokenizer
 
 
