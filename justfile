@@ -115,8 +115,8 @@ discover-topics-other:
 # Unsupervised BERTopic discovery — use for new channels before defining taxonomy
 # Requires: uv sync --extra topic-discovery
 # Usage: just discover-topics-bertopic "Neutrality Studies"
-discover-topics-bertopic CHANNEL:
-    uv run python scripts/discover_topics_bertopic.py --channel "{{ CHANNEL }}"
+discover-topics-bertopic CHANNEL *ARGS:
+    uv run python scripts/discover_topics_bertopic.py --channel "{{ CHANNEL }}" {{ ARGS }}
 
 # ── Keyword mention search (no ML required) ───────────────────────────────────
 
