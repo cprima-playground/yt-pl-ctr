@@ -53,7 +53,11 @@ class KeywordPlaylistConfig(BaseModel):
     title: str = Field(..., description="Exact YouTube playlist title")
     keywords: list[str] = Field(
         default_factory=list,
-        description="Case-insensitive terms; a video matches if any term appears in title, description, or transcript.",
+        description="Case-insensitive terms; a video matches if total occurrences >= min_mentions.",
+    )
+    min_mentions: int = Field(
+        default=1,
+        description="Minimum total keyword occurrences (across title + description + transcript) to count as a match.",
     )
 
 

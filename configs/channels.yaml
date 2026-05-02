@@ -216,6 +216,7 @@ channels:
           - "Macron"
       celebrity_controversy:
         title: "CO – Media – Celebrity Controversy & Hollywood"
+        min_mentions: 2
         keywords:
           - "Blake Lively"
           - "Justin Baldoni"

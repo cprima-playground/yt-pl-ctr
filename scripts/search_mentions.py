@@ -71,13 +71,18 @@ def _load_transcript_text(cache_dir: Path, video_id: str) -> str:
     return ""
 
 
-def _matches(text: str, keywords: list[str]) -> str | None:
-    """Return the first matching keyword (case-insensitive), or None."""
+def _count_mentions(text: str, keywords: list[str]) -> tuple[int, str | None]:
+    """Return (total_occurrences, first_matching_keyword) across all keywords."""
     lower = text.lower()
+    total = 0
+    first_kw = None
     for kw in keywords:
-        if kw.lower() in lower:
-            return kw
-    return None
+        count = lower.count(kw.lower())
+        if count:
+            total += count
+            if first_kw is None:
+                first_kw = kw
+    return total, first_kw
 
 
 @dataclass
@@ -87,7 +92,8 @@ class MentionMatch:
     slug: str
     playlist_title: str
     matched_keyword: str
-    matched_in: str   # "title" | "description" | "transcript"
+    matched_in: str       # primary source: "title" | "description" | "transcript"
+    mention_count: int    # total occurrences across all fields
 
 
 # ── Phase 1: scan ──────────────────────────────────────────────────────────────
@@ -152,23 +158,31 @@ def scan(
         transcript = _load_transcript_text(cache_dir, vid)
 
         for slug, kpl in channel_config.keyword_playlists.items():
-            # Check each text field in priority order; report where it first matched
+            # Count occurrences across all fields combined
+            total_count = 0
+            primary_source = "title"
+            first_kw = None
             for text, source in [
                 (title, "title"),
                 (description, "description"),
                 (transcript, "transcript"),
             ]:
-                kw = _matches(text, kpl.keywords)
-                if kw:
-                    matches.append(MentionMatch(
-                        video_id=vid,
-                        title=title,
-                        slug=slug,
-                        playlist_title=kpl.title,
-                        matched_keyword=kw,
-                        matched_in=source,
-                    ))
-                    break  # one match per playlist per video is enough
+                count, kw = _count_mentions(text, kpl.keywords)
+                total_count += count
+                if kw and first_kw is None:
+                    first_kw = kw
+                    primary_source = source
+
+            if first_kw and total_count >= kpl.min_mentions:
+                matches.append(MentionMatch(
+                    video_id=vid,
+                    title=title,
+                    slug=slug,
+                    playlist_title=kpl.title,
+                    matched_keyword=first_kw,
+                    matched_in=primary_source,
+                    mention_count=total_count,
+                ))
 
     print()
     by_slug: dict[str, int] = {}
@@ -210,7 +224,7 @@ def execute(matches: list[MentionMatch], config_path: Path, cache_dir: Path) -> 
             added += 1
             print(
                 f"  [ADD] {m.video_id} → \"{pl_title}\" "
-                f"(matched {m.matched_keyword!r} in {m.matched_in})",
+                f"({m.mention_count}× {m.matched_keyword!r}, first in {m.matched_in})",
                 flush=True,
             )
         except YouTubeAPIError as e:
