@@ -212,8 +212,10 @@ def main():
     # Load existing results to allow resuming
     existing = {}
     if output_path.exists():
-        for r in json.loads(output_path.read_text(encoding="utf-8")):
-            existing[r["video_id"]] = r
+        raw = output_path.read_text(encoding="utf-8").strip()
+        if raw:
+            for r in json.loads(raw):
+                existing[r["video_id"]] = r
 
     print(f"Model:   {args.model}")
     print(f"Target:  {len(targets)} episodes")
