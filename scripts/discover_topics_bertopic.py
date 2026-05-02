@@ -38,7 +38,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import cache as cache_mod
 from yt_pl_ctr.models import Config, ChannelConfig
 
-_TRANSCRIPT_CHARS = 3000
+# BERTopic engine: sentence-transformers truncate at 512 tokens (~2000 chars)
+_TRANSCRIPT_CHARS_BERTOPIC = 3000
+# NMF engine: TF-IDF handles arbitrary length — use full transcript
+_TRANSCRIPT_CHARS_NMF = None  # no limit
 _DESCRIPTION_CHARS = 800
 
 
@@ -63,10 +66,11 @@ def _select_channel(config: Config, channel_name: str | None) -> ChannelConfig:
     return config.channels[0]
 
 
-def _load_transcript(cache_dir: Path, video_id: str) -> str:
+def _load_transcript(cache_dir: Path, video_id: str, max_chars: int | None = None) -> str:
     path = cache_dir / "episodes" / video_id / "transcript.txt"
     if path.exists():
-        return path.read_text(encoding="utf-8", errors="replace")[:_TRANSCRIPT_CHARS]
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return text[:max_chars] if max_chars else text
     return ""
 
 
@@ -253,10 +257,13 @@ def main() -> int:
     config = _load_config(args.config)
     channel = _select_channel(config, args.channel)
 
+    transcript_limit = None if args.engine == "nmf" else _TRANSCRIPT_CHARS_BERTOPIC
+    transcript_desc = "no" if args.no_transcripts else ("full" if not transcript_limit else f"first {transcript_limit} chars")
+
     print(f"Channel    : {channel.name}")
     print(f"Engine     : {args.engine}")
     print(f"Topics     : {args.nr_topics}")
-    print(f"Transcripts: {'no' if args.no_transcripts else 'yes (first %d chars)' % _TRANSCRIPT_CHARS}")
+    print(f"Transcripts: {transcript_desc}")
     print()
 
     # Load index and filter
@@ -290,7 +297,7 @@ def main() -> int:
         meta = cache_mod.read_metadata(cache_dir, vid)
         if not meta:
             continue
-        transcript = _load_transcript(cache_dir, vid)
+        transcript = _load_transcript(cache_dir, vid, max_chars=transcript_limit)
         if not transcript:
             no_transcript += 1
         doc = _build_document(meta.get("title", ""), meta.get("description", ""),

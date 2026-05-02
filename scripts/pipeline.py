@@ -52,7 +52,8 @@ def _default_config() -> Path:
 
 
 def _run(cmd: list, label: str) -> int:
-    print(f"  $ {' '.join(str(c) for c in cmd)}", flush=True)
+    import shlex
+    print(f"  $ {' '.join(shlex.quote(str(c)) for c in cmd)}", flush=True)
     t0 = time.monotonic()
     result = subprocess.run(cmd)
     elapsed = time.monotonic() - t0
