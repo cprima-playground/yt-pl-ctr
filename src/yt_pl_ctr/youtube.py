@@ -181,16 +181,6 @@ class YouTubeClient:
                 self._playlist_cache[item_title] = item["id"]
                 if item_title == title:
                     return item["id"]
-                # Detect mojibake: UTF-8 bytes decoded as Latin-1 (Windows cp1252 misread)
-                try:
-                    if item_title.encode("latin-1").decode("utf-8") == title:
-                        logger.warning(
-                            "Matched mojibake playlist title %r → %r", item_title, title
-                        )
-                        self._playlist_cache[title] = item["id"]
-                        return item["id"]
-                except (UnicodeEncodeError, UnicodeDecodeError):
-                    pass
             request = self._service.playlists().list_next(request, response)
 
         return None

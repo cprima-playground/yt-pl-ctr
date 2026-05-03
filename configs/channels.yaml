@@ -122,13 +122,13 @@ channels:
     # Slugs that become YouTube playlists — must match leaf slugs in taxonomy.
     playlists:
       ancient_civilizations:
-        title: "JRE – History & Unexplained – Ancient Civilizations & Alternative History"
+        title: "JRE - History & Unexplained - Ancient Civilizations & Alternative History"
       ufo_extraterrestrial:
-        title: "JRE – History & Unexplained – UFO, Paranormal & Cryptozoology"
+        title: "JRE - History & Unexplained - UFO, Paranormal & Cryptozoology"
       paranormal_cryptozoology:
-        title: "JRE – History & Unexplained – UFO, Paranormal & Cryptozoology"
+        title: "JRE - History & Unexplained - UFO, Paranormal & Cryptozoology"
       psychology_mental_health:
-        title: "JRE – Science & Mind – Psychology & Mental Health"
+        title: "JRE - Science & Mind - Psychology & Mental Health"
 
   - name: "Candace Owens"
     url: "https://www.youtube.com/@RealCandaceO/videos"
@@ -203,21 +203,21 @@ channels:
     # ML-based playlists (primary topic classification, requires trained model)
     playlists:
       us_elections_politics:
-        title: "CO – Politics – US Elections & Domestic Politics"
+        title: "CO - Politics - US Elections & Domestic Politics"
       censorship_free_speech:
-        title: "CO – Politics – Censorship & Free Speech"
+        title: "CO - Politics - Censorship & Free Speech"
 
     # Keyword-based playlists (entity/mention matching — no ML model required)
     keyword_playlists:
       france_europe:
-        title: "CO – International – France & Europe"
+        title: "CO - International - France & Europe"
         min_mentions: 5
         keywords:
           - "Brigitte Macron"
           - "Emmanuel Macron"
           - "Macron"
       celebrity_controversy:
-        title: "CO – Media – Celebrity Controversy & Hollywood"
+        title: "CO - Media - Celebrity Controversy & Hollywood"
         min_mentions: 5
         keywords:
           - "Blake Lively"
@@ -292,11 +292,11 @@ channels:
 
     playlists:
       caucasus:
-        title: "NS – Eastern Europe – Caucasus Region"
+        title: "NS - Eastern Europe - Caucasus Region"
       intelligence_covert_ops:
-        title: "NS – Media & Governance – Intelligence & Covert Operations"
+        title: "NS - Media & Governance - Intelligence & Covert Operations"
       china_taiwan_japan:
-        title: "NS – East Asia – China, Taiwan & Japan"
+        title: "NS - East Asia - China, Taiwan & Japan"
 
   - name: "The New Atlas"
     url: "https://www.youtube.com/@TheNewAtlas/videos"
