@@ -145,67 +145,41 @@ channels:
         children:
           - slug: us_elections_politics
             label: "US elections & domestic politics"
-          - slug: government_policy
-            label: "government policy & legislation"
-          - slug: censorship_free_speech
-            label: "censorship & free speech"
-          - slug: deep_state_establishment
-            label: "deep state & political establishment"
-
-      - slug: international_affairs
-        label: "International Affairs"
-        children:
-          - slug: france_europe
-            label: "France & Europe"        # Brigitte Macron episodes land here
-          - slug: africa_diaspora
-            label: "Africa & the diaspora"
+          - slug: deep_state_censorship
+            label: "deep state & censorship"    # merged: deep_state_establishment + censorship_free_speech
           - slug: global_geopolitics
             label: "global geopolitics & wars"
 
       - slug: media_culture
         label: "Media & Culture"
         children:
-          - slug: mainstream_media_criticism
-            label: "mainstream media criticism"
-          - slug: celebrity_controversy
-            label: "celebrity controversy & Hollywood"   # Blake Lively episodes land here
-          - slug: entertainment_news
-            label: "entertainment news & pop culture"
+          - slug: media_celebrity
+            label: "media & celebrity culture"  # merged: celebrity_controversy + mainstream_media_criticism + entertainment_news
 
-      - slug: society_identity
-        label: "Society & Identity"
-        children:
-          - slug: race_identity
-            label: "race & identity politics"
-          - slug: gender_feminism
-            label: "gender & feminism"
-          - slug: family_values_religion
-            label: "family values & religion"
-          - slug: crime_public_safety
-            label: "crime & public safety"
-
-      - slug: economics_business
-        label: "Economics & Business"
-        children:
-          - slug: corporate_woke_agenda
-            label: "corporate woke agenda & ESG"
-          - slug: economy_inflation
-            label: "economy & inflation"
-
-      - slug: legal_institutional
-        label: "Legal & Institutional"
+      - slug: society_law
+        label: "Society & Law"
         children:
           - slug: lawsuits_courts
             label: "lawsuits & courts"
-          - slug: big_tech_censorship
-            label: "big tech & platform censorship"
+          - slug: society_values
+            label: "society & values"           # merged: gender_feminism + family_values_religion + crime_public_safety
+
+      - slug: international_affairs
+        label: "International Affairs"
+        children:
+          - slug: france_europe
+            label: "France & Europe"
 
     # ML-based playlists (primary topic classification, requires trained model)
     playlists:
       us_elections_politics:
         title: "CO: Politics / US Elections & Domestic Politics"
-      censorship_free_speech:
-        title: "CO: Politics / Censorship & Free Speech"
+      deep_state_censorship:
+        title: "CO: Politics / Deep State & Censorship"
+      media_celebrity:
+        title: "CO: Media / Celebrity & Culture"
+      lawsuits_courts:
+        title: "CO: Society & Law / Lawsuits & Courts"
 
     # Keyword-based playlists (entity/mention matching — no ML model required)
     keyword_playlists:
