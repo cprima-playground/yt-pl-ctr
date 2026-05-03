@@ -2071,6 +2071,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "charset-normalizer" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
     { name = "google-auth-oauthlib" },
@@ -2100,6 +2101,7 @@ topic-discovery = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.97.0" },
     { name = "bertopic", marker = "extra == 'topic-discovery'", specifier = ">=0.16.0" },
+    { name = "charset-normalizer", specifier = ">=3.0.0" },
     { name = "google-api-python-client", specifier = ">=2.0.0" },
     { name = "google-auth", specifier = ">=2.0.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.0.0" },

@@ -37,6 +37,7 @@ dependencies = [
     "nltk>=3.9.4",
     "anthropic>=0.97.0",
     "scikit-learn>=1.4.0",
+    "charset-normalizer>=3.0.0",
 ]
 
 [project.optional-dependencies]
