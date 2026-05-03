@@ -1,0 +1,55 @@
+{
+  "n_examples": 947,
+  "classes": [
+    "caucasus",
+    "china_taiwan_japan",
+    "europe_eu_politics",
+    "global_multipolarity",
+    "intelligence_covert_ops",
+    "international_law_sanctions",
+    "iran_middle_east",
+    "israel_palestine",
+    "media_propaganda",
+    "nato_security",
+    "neutrality_sovereignty",
+    "nuclear_deterrence",
+    "other",
+    "ukraine_russia_conflict",
+    "us_foreign_policy"
+  ],
+  "class_counts": {
+    "israel_palestine": 75,
+    "europe_eu_politics": 50,
+    "iran_middle_east": 95,
+    "global_multipolarity": 120,
+    "china_taiwan_japan": 47,
+    "other": 9,
+    "neutrality_sovereignty": 63,
+    "international_law_sanctions": 46,
+    "us_foreign_policy": 91,
+    "caucasus": 18,
+    "media_propaganda": 74,
+    "ukraine_russia_conflict": 181,
+    "nato_security": 49,
+    "intelligence_covert_ops": 10,
+    "nuclear_deterrence": 19
+  },
+  "use_transcript": true,
+  "min_examples": 5,
+  "tfidf_vocab_size": 30000,
+  "cv_splits": 5,
+  "cv_scores": {
+    "test_accuracy": {
+      "mean": 0.6621553884711779,
+      "std": 0.03233976050624578
+    },
+    "test_f1_macro": {
+      "mean": 0.6133894420504759,
+      "std": 0.033253065789880305
+    },
+    "test_f1_weighted": {
+      "mean": 0.6508128410657743,
+      "std": 0.033304509166114396
+    }
+  }
+}
