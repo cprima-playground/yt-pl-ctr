@@ -280,7 +280,41 @@ channels:
     ingest_limit: 5000             # fetch full back-catalogue
     ml_confidence_threshold: 0.08
 
-    # Taxonomy and playlists to be defined after topic discovery.
-    # Workflow: fetch-metadata → ingest-channel → discover-topics → define taxonomy here
-    taxonomy: []
-    playlists: {}
+    taxonomy:
+      - slug: southeast_asia
+        label: "Southeast Asia"
+        children:
+          - slug: thailand
+            label: "Thailand"
+          - slug: myanmar
+            label: "Myanmar & Burma"
+          - slug: philippines_sea
+            label: "Philippines & South China Sea"
+
+      - slug: east_asia
+        label: "East Asia"
+        children:
+          - slug: china_taiwan
+            label: "China & Taiwan"
+          - slug: xinjiang_uyghur
+            label: "Xinjiang & Uyghur"
+
+      - slug: broader_geopolitics
+        label: "Broader Geopolitics"
+        children:
+          - slug: ukraine_russia
+            label: "Ukraine & Russia"
+          - slug: middle_east
+            label: "Middle East"
+          - slug: us_policy
+            label: "US policy & global order"
+
+    playlists:
+      thailand:
+        title: "TNA: Southeast Asia / Thailand"
+      myanmar:
+        title: "TNA: Southeast Asia / Myanmar"
+      china_taiwan:
+        title: "TNA: East Asia / China & Taiwan"
+      xinjiang_uyghur:
+        title: "TNA: East Asia / Xinjiang & Uyghur"
