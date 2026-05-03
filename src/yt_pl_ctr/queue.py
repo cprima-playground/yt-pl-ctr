@@ -80,7 +80,7 @@ class VideoQueue:
             logger.debug("Video %s already in queue, skipping", video.video_id)
             return file_path
 
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(item, f, indent=2)
 
         logger.info("Queued: %s", video.title[:50])
@@ -106,7 +106,7 @@ class VideoQueue:
         files = sorted(self.pending_dir.glob("*.json"), key=lambda p: p.name)
         for file_path in files:
             try:
-                with open(file_path) as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
                 yield QueueItem(
                     video=VideoMetadata(
@@ -138,13 +138,13 @@ class VideoQueue:
         """Move item to failed queue."""
         if item.file_path and item.file_path.exists():
             # Add error info to the file
-            with open(item.file_path) as f:
+            with open(item.file_path, encoding="utf-8") as f:
                 data = json.load(f)
             data["error"] = error
             data["failed_at"] = datetime.utcnow().isoformat()
 
             dest = self.failed_dir / item.file_path.name
-            with open(dest, "w") as f:
+            with open(dest, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             item.file_path.unlink()
             logger.debug("Marked failed: %s - %s", item.video.video_id, error)

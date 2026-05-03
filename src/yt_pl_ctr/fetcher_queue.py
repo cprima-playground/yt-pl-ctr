@@ -18,14 +18,14 @@ STATE_FILE = ".yt-pl-ctr-state.json"
 def load_state(state_file: Path = Path(STATE_FILE)) -> dict:
     """Load state from dotfile."""
     if state_file.exists():
-        with open(state_file) as f:
+        with open(state_file, encoding="utf-8") as f:
             return json.load(f)
     return {"offsets": {}}
 
 
 def save_state(state: dict, state_file: Path = Path(STATE_FILE)) -> None:
     """Save state to dotfile."""
-    with open(state_file, "w") as f:
+    with open(state_file, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 

@@ -19,7 +19,7 @@ STATE_FILE = ".yt-pl-ctr-classifications.json"
 def load(path: Path) -> dict:
     if path.exists():
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.warning("Could not load classification state from %s: %s", path, e)
@@ -28,7 +28,7 @@ def load(path: Path) -> dict:
 
 def save(state: dict, path: Path) -> None:
     try:
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
     except Exception as e:
         logger.warning("Could not save classification state to %s: %s", path, e)
