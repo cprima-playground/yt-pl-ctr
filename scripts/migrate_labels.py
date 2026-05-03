@@ -2,9 +2,9 @@
 """Remap old taxonomy slugs to new ones in an llm_labeled JSON file.
 
 Usage:
-    uv run python scripts/migrate_labels.py \
-        --input T:\yt-pl-ctr\llm_labeled_candace_owens.json \
-        --output T:\yt-pl-ctr\llm_labeled_candace_owens.json
+    uv run python scripts/migrate_labels.py
+        --input T:/yt-pl-ctr/llm_labeled_candace_owens.json
+        --output T:/yt-pl-ctr/llm_labeled_candace_owens.json
 """
 
 import argparse

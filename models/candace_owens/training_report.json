@@ -1,0 +1,41 @@
+{
+  "n_examples": 359,
+  "classes": [
+    "deep_state_censorship",
+    "france_europe",
+    "global_geopolitics",
+    "lawsuits_courts",
+    "media_celebrity",
+    "other",
+    "society_values",
+    "us_elections_politics"
+  ],
+  "class_counts": {
+    "lawsuits_courts": 42,
+    "media_celebrity": 133,
+    "society_values": 25,
+    "us_elections_politics": 52,
+    "deep_state_censorship": 31,
+    "other": 27,
+    "global_geopolitics": 29,
+    "france_europe": 20
+  },
+  "use_transcript": true,
+  "min_examples": 5,
+  "tfidf_vocab_size": 30000,
+  "cv_splits": 5,
+  "cv_scores": {
+    "test_accuracy": {
+      "mean": 0.5208137715179969,
+      "std": 0.024078870444455513
+    },
+    "test_f1_macro": {
+      "mean": 0.4409015322504851,
+      "std": 0.01383550055723752
+    },
+    "test_f1_weighted": {
+      "mean": 0.5033772709818382,
+      "std": 0.02370770135866832
+    }
+  }
+}
