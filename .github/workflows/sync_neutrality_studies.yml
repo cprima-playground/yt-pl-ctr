@@ -19,8 +19,8 @@ on:
         type: boolean
         default: false
   schedule:
-    # Run daily at 05:11 UTC (offset from JRE 03:23 and CO 04:17 to avoid quota overlap)
-    - cron: "11 5 * * *"
+    # Run daily at 09:11 UTC (after YouTube quota reset at 07:00 UTC / midnight PDT)
+    - cron: "11 9 * * *"
 
 # Prevent concurrent runs — a slow or stuck run must finish before the next fires.
 concurrency:
@@ -34,8 +34,6 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4

@@ -6,6 +6,8 @@ name: Sync JRE Playlists
 # Classification runs on title + description only, using the committed model at
 # models/joe_rogan_experience/. The 0.08 confidence threshold is calibrated for this
 # 38-class model — episodes below threshold are skipped rather than misclassified.
+#
+# Scheduled after 07:15 UTC — YouTube quota resets at midnight PDT (= 07:00 UTC).
 
 on:
   workflow_dispatch:
@@ -19,8 +21,8 @@ on:
         type: boolean
         default: false
   schedule:
-    # Run daily at 03:23 UTC
-    - cron: "23 3 * * *"
+    # Run daily at 07:23 UTC (after YouTube quota reset at 07:00 UTC / midnight PDT)
+    - cron: "23 7 * * *"
 
 # Prevent concurrent runs — a slow or stuck run must finish before the next fires.
 concurrency:
@@ -34,8 +36,6 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4
