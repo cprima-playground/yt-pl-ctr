@@ -434,6 +434,14 @@ Modes:
     try:
         if args.execute_plan:
             planned = load_plan(cache_dir)
+            if args.channel:
+                config = _load_config(args.config)
+                matches = [c for c in config.channels if c.name.lower() == args.channel.lower()]
+                if matches:
+                    prefix = matches[0].playlist_prefix + ":"
+                    before = len(planned)
+                    planned = [a for a in planned if (a.target_pl_name or "").startswith(prefix)]
+                    print(f"Channel filter '{args.channel}': {len(planned)}/{before} actions match prefix '{prefix}'")
             # Need membership context for execute; re-read from cache
             membership_data = cache_mod.read_playlist_membership(cache_dir, max_age_hours=9999)
             if membership_data is None:
