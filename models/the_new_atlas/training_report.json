@@ -1,0 +1,43 @@
+{
+  "n_examples": 947,
+  "classes": [
+    "china_taiwan",
+    "middle_east",
+    "myanmar",
+    "other",
+    "philippines_sea",
+    "thailand",
+    "ukraine_russia",
+    "us_policy",
+    "xinjiang_uyghur"
+  ],
+  "class_counts": {
+    "middle_east": 87,
+    "us_policy": 218,
+    "ukraine_russia": 340,
+    "myanmar": 58,
+    "thailand": 99,
+    "china_taiwan": 64,
+    "philippines_sea": 12,
+    "other": 38,
+    "xinjiang_uyghur": 31
+  },
+  "use_transcript": true,
+  "min_examples": 5,
+  "tfidf_vocab_size": 30000,
+  "cv_splits": 5,
+  "cv_scores": {
+    "test_accuracy": {
+      "mean": 0.787791701475912,
+      "std": 0.02474294423663325
+    },
+    "test_f1_macro": {
+      "mean": 0.7296089250716067,
+      "std": 0.032526679769520526
+    },
+    "test_f1_weighted": {
+      "mean": 0.7889449365925298,
+      "std": 0.021256011640742485
+    }
+  }
+}

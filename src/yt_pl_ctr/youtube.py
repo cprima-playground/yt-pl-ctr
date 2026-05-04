@@ -364,6 +364,23 @@ class YouTubeClient:
                 raise
             raise YouTubeAPIError(f"Failed to remove playlist item {playlist_item_id}: {e}") from e
 
+    @retry_on_rate_limit
+    def delete_playlist(self, playlist_id: str) -> None:
+        """Delete a playlist by ID. Irreversible."""
+        _rate_limit_delay()
+        logger.info("API CALL: playlists.delete (%s)", playlist_id)
+        try:
+            self._service.playlists().delete(id=playlist_id).execute()
+            self._playlist_cache = {t: pid for t, pid in self._playlist_cache.items() if pid != playlist_id}
+            logger.info("Deleted playlist %s", playlist_id)
+        except HttpError as e:
+            if e.resp.status == 404:
+                logger.debug("Playlist %s already gone", playlist_id)
+                return
+            if e.resp.status == 429:
+                raise
+            raise YouTubeAPIError(f"Failed to delete playlist {playlist_id}: {e}") from e
+
     # ── Playlist membership ───────────────────────────────────────────────────
 
     @retry_on_rate_limit

@@ -170,17 +170,6 @@ channels:
           - slug: france_europe
             label: "France & Europe"
 
-    # ML-based playlists (primary topic classification, requires trained model)
-    playlists:
-      us_elections_politics:
-        title: "CO: Politics / US Elections & Domestic Politics"
-      deep_state_censorship:
-        title: "CO: Politics / Deep State & Censorship"
-      media_celebrity:
-        title: "CO: Media / Celebrity & Culture"
-      lawsuits_courts:
-        title: "CO: Society & Law / Lawsuits & Courts"
-
     # Keyword-based playlists (entity/mention matching — no ML model required)
     keyword_playlists:
       france_europe:
